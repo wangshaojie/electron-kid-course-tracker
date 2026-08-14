@@ -8,7 +8,6 @@
  *  - 清空（二次确认）
  */
 import { ref } from 'vue'
-import { useDBStore } from '@/stores/db'
 import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useChildrenStore, type Child } from '@/stores/children'
@@ -18,7 +17,6 @@ import { ElMessage } from 'element-plus'
 import { todayStr } from '@/utils/date'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
 
-const db = useDBStore()
 const courses = useCoursesStore()
 const checkins = useCheckinsStore()
 const children = useChildrenStore()
@@ -165,7 +163,7 @@ async function onMigrate() {
 async function onWipe() {
   const ok = await dangerousConfirm({
     title: '清空所有数据',
-    message: '云端数据请到 CloudBase 控制台清理，本地版本无此入口。继续会尝试调用（可能失败）。',
+    message: '本应用不提供一键清空，云端数据请到 CloudBase 控制台手动清理。',
     keyword: '清空',
     confirmText: '我已了解',
   })
@@ -305,13 +303,13 @@ async function onWipe() {
       <div class="card-base">
         <h3 class="mb-1 font-bold text-ink">ℹ️ 关于</h3>
         <dl class="grid grid-cols-2 gap-2 text-sm">
-          <dt class="text-ink-soft">软件名称</dt><dd>kid-course-tracker</dd>
+          <dt class="text-ink-soft">软件名称</dt><dd>一寸光阴</dd>
           <dt class="text-ink-soft">版本</dt><dd>v0.2.0 · 多孩子支持</dd>
-          <dt class="text-ink-soft">技术栈</dt><dd>Electron + Vue 3 + sql.js + Element Plus + ECharts</dd>
+          <dt class="text-ink-soft">技术栈</dt><dd>Electron + Vue 3 + CloudBase PG + Element Plus + ECharts</dd>
           <dt class="text-ink-soft">数据位置</dt>
-          <dd class="break-all font-mono text-xs">{{ db.dbPath }}</dd>
+          <dd>云端 CloudBase PostgreSQL（多设备同步）</dd>
           <dt class="text-ink-soft">说明</dt>
-          <dd>纯本地单机，无联网、无登录、无同步</dd>
+          <dd>需联网，支持 OTP 邮箱验证码登录、多设备登录看到同一份数据</dd>
         </dl>
       </div>
     </div>

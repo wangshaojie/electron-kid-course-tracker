@@ -123,7 +123,7 @@ pnpm dev          # Vite + Electron + DevTools 自动开
 pnpm dev:web      # 只跑 Vite（不开 Electron）
 ```
 
-dev 数据落在 `C:\Users\Admin\AppData\Roaming\Electron\course-tracker\`
+dev 数据落在 `%USERPROFILE%\AppData\Roaming\Electron\course-tracker\`
 
 ### 4.4 打包发布
 
@@ -224,8 +224,8 @@ Vite 在 `dev` / `build` / `preview` 三种 mode 下读不同文件：
 
 - [ ] **轮换 publishable key**（已泄露在历史对话里）
 - [ ] **重新启用 PG RLS**，业务读写改走 cloud function
-- [ ] **OTP 限流按 email + IP 双维度**（当前只有 IP 限）
-- [ ] **每日 PG 备份 cron**（用 `tcb fn deploy` + 定时触发）
+- [x] **OTP 限流按 email + IP 双维度**（`auth-otp` 已实现：`OTP_RATE_LIMIT_MS` + `OTP_EMAIL_HOUR_LIMIT`）
+- [ ] **每日 PG 备份 cron**（`pg-backup` Event 函数已写，需配定时触发）
 - [ ] **NSIS 代码签名**（避免 SmartScreen 警告）
 - [ ] tsc 0 错误（`npx vue-tsc --noEmit`）
 - [ ] 打包 release 用时间戳 output 目录
@@ -251,7 +251,7 @@ Vite 在 `dev` / `build` / `preview` 三种 mode 下读不同文件：
 
 ### Q3: 切换账号后看到上一个账号的数据？
 
-如果新包（v0.2.7+，2026-08-14 之后打的）还出现：清 localStorage（DevTools → Application → Storage → Clear site data）后重试。
+如果新包（v0.2.0+，2026-08-14 之后打的）还出现：清 localStorage（DevTools → Application → Storage → Clear site data）后重试。
 
 ### Q4: 打包失败 "file used by another process"？
 

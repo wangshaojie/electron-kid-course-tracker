@@ -26,13 +26,14 @@
                        ▼
 ┌────────────────────────────────────────────────────────┐
 │  CloudBase 云函数                                       │
-│  ├─ auth-otp (HTTP Function, port 9000)                │
+│  ├─ auth-otp (HTTP Function, 本地调试 :9000)           │
 │  │    POST /send    发 6 位验证码邮件（Resend）         │
 │  │    POST /verify  校验码 + 签自签 JWT（30 天有效）    │
 │  │    GET  /health  健康检查                            │
-│  └─ uid = sha256(email).slice(0, 32)  ← 跨设备稳定     │
+│  ├─ uid = sha256(email).slice(0, 32)  ← 跨设备稳定     │
+│  └─ pg-backup (Event 定时触发)  每日 PG 备份            │
 └────────────────────────────────────────────────────────┘
-                       │ service role (init via TENCENTCLOUD_SECRETID/SECRETKEY)
+                       │ service role (init via TCB_SDK_SECRET_ID/SECRET_KEY)
                        ▼
 ┌────────────────────────────────────────────────────────┐
 │  CloudBase PostgreSQL (public schema)                   │
@@ -141,7 +142,7 @@ flowchart LR
 
     subgraph CloudBase["CloudBase 云端"]
         Otp[auth-otp<br/>HTTP Function]
-        Backup[pg-backup<br/>HTTP Function]
+        Backup[pg-backup<br/>Event 定时触发]
         PG[(CloudBase PG<br/>public schema)]
     end
 
@@ -165,23 +166,29 @@ flowchart LR
 **关键边界**：
 - 渲染端**只走** PostgREST（`@cloudbase/js-sdk` 的 `app.rdb`），**不**直接调 cloud function
 - 业务读写权限 = anon publishable key + RLS disable + 前端 .eq('owner_id', uid) 三件套
-- `auth-otp` / `pg-backup` 是**两个独立 HTTP Function**，由 service role 凭据直连 PG
+- `auth-otp` 是 **HTTP Function**，`pg-backup` 是 **Event Function（定时触发）**，都通过 service role 凭据直连 PG
 
 ## 3. 目录速览
 
 ```
 kid-course-tracker/
 ├── AGENTS.md                ← 你正在读
-├── README.md                ← 项目总览
-├── cloudbaserc.json         ← CloudBase 部署配置（待填真实 envId）
+├── cloudbaserc.json         ← CloudBase 部署配置（已填真实 envId，含密钥已 gitignore）
 ├── cloudbase/               ← CloudBase 后端资产
-│   ├── migrations/          ← SQL migration（按文件名升序执行）
+│   ├── migrations/          ← SQL migration（按文件名升序执行，共 10 个）
 │   │   ├── 20260813055503_init_business.sql
 │   │   ├── 20260813055504_email_otps.sql
+│   │   ├── 20260813055505_email_otps_disable_rls.sql
 │   │   ├── 20260813055506_business_disable_rls.sql
 │   │   ├── 20260813055507_anon_policies.sql
-│   │   └── 20260813222000_user_prefs.sql
-│   └── functions/auth-otp/  ← HTTP 云函数（Express-like HTTP server）
+│   │   ├── 20260813055508_regrant.sql
+│   │   ├── 20260813222000_user_prefs.sql
+│   │   ├── 20260814100000_backups.sql
+│   │   ├── 20260814120000_user_prefs_anon.sql
+│   │   └── 20260814130000_backups_anon.sql
+│   └── functions/           ← 云函数
+│       ├── auth-otp/        ← HTTP 云函数（发码/验码/签 JWT）
+│       └── pg-backup/       ← Event 云函数（每日 PG 备份）
 │
 ├── desktop/                 ← 桌面端
 │   ├── AGENTS.md            ← 桌面端专属约定
@@ -207,11 +214,8 @@ kid-course-tracker/
 │   ├── cloudfunctions/      ← 旧 wx-server-sdk 版云函数（已废弃，保留作历史）
 │   └── release/             ← electron-builder 产物
 │
-├── express-kid-course-tracker/  ← 早期 Node+Express 调试版（已废弃）
 ├── scripts/                 ← 杂项脚本
-├── .agents/                 ← Mavis agent 配置
-├── release.bak.<ts>/        ← 旧打包产物（Defender 锁 asar 留下的）
-└── build*.log / fn-*.log    ← 历史构建/部署日志
+└── .agents/                 ← Mavis agent 配置
 ```
 
 ## 4. 核心约定
@@ -271,11 +275,12 @@ pnpm dev:web
 # 渲染端 + 主进程编译
 pnpm build
 
-# 打 NSIS 安装包 + portable 绿色版
+# 打 NSIS 安装包（build:win）
 pnpm build:win
-# 单独打 NSIS / portable / unpacked
-pnpm exec electron-builder --win nsis --x64
-pnpm exec electron-builder --win portable --x64
+# 打 portable 绿色版（build:win:portable）
+pnpm build:win:portable
+# 只打 unpacked 解包目录（build:win:dir）
+pnpm build:win:dir
 
 # 跑在生产模式（不自动开 DevTools；想开就 --open-devtools）
 pnpm exec electron dist-electron/main.mjs --open-devtools
@@ -355,8 +360,6 @@ migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本
 3. 🟡 **OTP /verify 改用 attempts 全局计数**（当前每条码独立 5 次，可绕过）
 4. 🟡 **NSIS 代码签名**（避免 SmartScreen 警告）
 5. 🟢 **写每日 PG 备份 cron**（用 `tcb fn deploy` + 定时触发）
-
-详见 `desktop/REQUIREMENTS.md` 之外的上线审核报告（会话内生成）。
 
 ## 10. agent 协作约定
 

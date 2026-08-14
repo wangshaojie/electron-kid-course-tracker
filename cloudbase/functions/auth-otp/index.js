@@ -11,7 +11,8 @@
  *   - MAIL_FROM         发件人（默认 onboarding@resend.dev）
  *   - MAIL_SUBJECT      邮件主题
  *   - JWT_SECRET        签 JWT 用的 secret（强随机串）
- *   - TENCENTCLOUD_SECRETID / TENCENTCLOUD_SECRETKEY   CloudBase SDK 凭据
+ *   - CLOUDBASE_APIKEY  CloudBase API key（有则优先）
+ *   - TCB_SDK_SECRET_ID / TCB_SDK_SECRET_KEY   CloudBase SDK 凭据（CLOUDBASE_APIKEY 未设时用）
  *   - TCB_ENV_ID        CloudBase 环境 id
  *   - OTP_RATE_LIMIT_MS   send 同 IP/邮箱最小间隔（默认 60000ms，0 关闭）
  *   - OTP_EMAIL_HOUR_LIMIT  send 单邮箱每小时上限（默认 5，0 关闭）

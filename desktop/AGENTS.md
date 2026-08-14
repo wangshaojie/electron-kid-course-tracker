@@ -105,7 +105,7 @@ src/
 4. 业务表 owner_id 必须等于 self uid（store 内强制 .eq 过滤）
 5. 切换账号必须清空 children/courses/checkins store（见 `../AGENTS.md` §4.3）
 6. **不弹广告**、**不引导付费**、**不收集遥测**
-7. 不主动清理垃圾（`release.bak.*` / 历史 .log 保留）
+7. release 产物用时间戳 output 目录（`release/<ts>`）；旧 `release.bak.*` / 历史 .log 可清理（2026-08 已清理过）
 8. **pnpm onlyBuiltDependencies** 让 pnpm 10 跑 electron/esbuild postinstall
 9. **Electron 二进制** 走 npmmirror：`$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'`
 
@@ -134,5 +134,5 @@ src/
 - [ ] tsc 通过
 - [ ] electron-builder 打 NSIS + portable 不报错
 - [ ] publishable key 已轮换 + RLS 已收紧
-- [ ] OTP 限流按 email + IP 双维度
-- [ ] 每日 PG 备份 cron 已部署
+- [x] OTP 限流按 email + IP 双维度（`auth-otp` 已实现 `OTP_RATE_LIMIT_MS` + `OTP_EMAIL_HOUR_LIMIT`）
+- [ ] 每日 PG 备份 cron 已部署（`pg-backup` Event 函数已写）
