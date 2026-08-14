@@ -133,14 +133,13 @@ pnpm run build
 
 # 出 NSIS 安装器 + portable 绿色版
 # ⚠️ Windows Defender 锁 asar 时，给 output 加时间戳绕开
-pnpm exec electron-builder --win nsis --x64 --config.directories.output="release/$(Get-Date -Format 'yyyyMMdd-HHmmss')"
-pnpm exec electron-builder --win portable --x64 --config.directories.output="release/$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+pnpm exec electron-builder --win nsis portable --x64 --config.directories.output="release/$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 ```
 
-产物：
-- `release/<ts>/一寸光阴-0.2.0-x64.exe` — NSIS 安装器 ~101 MB
-- `release/<ts>/一寸光阴-0.2.0-portable-x64.exe` — 绿色版 ~82 MB
-- `release/<ts>/win-unpacked/一寸光阴.exe` — 解包的可执行
+产物（app.asar 已排除 node_modules，Vite/esbuild 已把依赖打进 dist）：
+- `release/<ts>/一寸光阴-0.2.0-x64.exe` — NSIS 安装器 ~79 MB
+- `release/<ts>/一寸光阴-0.2.0-portable-x64.exe` — 绿色版 ~79 MB
+- `release/<ts>/win-unpacked/一寸光阴.exe` — 解包的可执行（~272 MB，含 Electron 引擎）
 
 **已发布版本下载（GitHub Release）**：
 - https://github.com/wangshaojie/electron-kid-course-tracker/releases
