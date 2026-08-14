@@ -198,6 +198,7 @@ kid-course-tracker/
 │   ├── tsconfig*.json
 │   ├── electron/            ← 主进程 + preload
 │   │   ├── main.ts
+│   │   ├── updater.ts       ← 版本检查（GitHub 双通道）
 │   │   └── preload.ts
 │   ├── src/                 ← 渲染端源码
 │   │   ├── main.ts          ← 入口：auth bootstrap → mount
@@ -352,6 +353,10 @@ migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本
 - **CloudBase cloudbaserc.json type 字段大写** —— `"type": "HTTP"` 不是 `"http"`。
 
 - **CloudBase RLS 对 service role 不自动 bypass** —— secretId/secretKey 走 PostgREST 时默认 anon/authenticated 角色。RLS 启用时必须给 anon/authenticated 加 policy，或 disable RLS。
+
+- **GitHub 匿名 API 限流（版本检查）** —— `electron/updater.ts` 别用 Electron `net.request`（走 Chromium 网络栈/系统代理，出口 IP 易被 GitHub API 403 限流）；用 Node 原生 `https` 直连。且 API 失败会自动降级到 `releases/latest` 的 302 Location 解析版本号（网页请求不受 API 限流）。改这块时保持双通道。
+
+- **未打包时 app.getVersion() 返回 Electron 版本号** —— dev 联调版本检查（UPDATE_CHECK=1）时 currentVersion 会变成 33.x 而非应用版本。main.ts 用 `readAppVersion()` 从 package.json 读真实版本注入 `checkForUpdates`，别去掉。
 
 ## 9. 安全 TODO（**上线前必做**）
 

@@ -21,6 +21,18 @@ declare global {
       }): Promise<string | null>
       readFileByPath(p: string): Promise<ArrayBuffer>
     }
+    // 版本更新提醒（preload 暴露）
+    updater: {
+      /** 订阅"发现新版本"，返回取消订阅函数 */
+      onUpdateAvailable(cb: (info: {
+        version: string
+        currentVersion: string
+        tag: string
+        url: string
+      }) => void): () => void
+      /** 用系统浏览器打开外链（GitHub 下载页） */
+      openExternal(url: string): Promise<void>
+    }
   }
 }
 export {}

@@ -3,6 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
+import { checkForUpdates } from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -73,11 +74,32 @@ function createWindow() {
 
 app.whenReady().then(() => {
   registerFsHandlers()
+  // 打开外链（更新提示的"前往下载"按钮）
+  ipcMain.handle('shell:openExternal', async (_e, url: string) => {
+    if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+      await shell.openExternal(url)
+    }
+  })
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
   })
+  // 启动 5 秒后再查更新（不拖慢首屏；无新版本/网络失败静默）
+  setTimeout(() => { void checkForUpdates(readAppVersion()) }, 5000)
 })
+
+/**
+ * 当前应用版本：优先读 package.json（dev 联调时 app.getVersion() 会返回 Electron
+ * 版本号而非应用版本）；读不到再回退 app.getVersion()
+ */
+function readAppVersion(): string {
+  try {
+    const p = path.join(__dirname, '../package.json')
+    const data = JSON.parse(fsSync.readFileSync(p, 'utf8'))
+    if (typeof data.version === 'string' && data.version) return data.version
+  } catch { /* ignore */ }
+  return app.getVersion()
+}
 
 app.on('window-all-closed', () => {
   if (process.platform !== 'darwin') app.quit()
