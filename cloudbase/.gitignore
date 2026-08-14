@@ -1,0 +1,10 @@
+node_modules
+cloudbaserc.local.json
+.cloudbaserc.json
+.env
+.env.local
+
+# 部署时 cloudbaserc.json 里可能含 API key，团队里建议加进 .gitignore；
+# 如果项目只你一个人用、且 key 会被云端轮换，那就保留：
+# !cloudbaserc.json
+cloudbaserc.json

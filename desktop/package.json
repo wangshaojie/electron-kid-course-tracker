@@ -1,0 +1,101 @@
+{
+  "name": "course-tracker",
+  "version": "0.2.0",
+  "private": true,
+  "description": "一寸光阴 —— 家长自用的孩子课外培训班课程 / 缴费 / 打卡 / 课时统计工具",
+  "main": "dist-electron/main.mjs",
+  "author": {
+    "name": "Mavis",
+    "email": "support@example.com"
+  },
+  "scripts": {
+    "dev": "node build-electron.mjs && concurrently -k -n vite,electron -c blue,magenta \"vite\" \"wait-on http://127.0.0.1:5174 && cross-env VITE_DEV_SERVER_URL=http://127.0.0.1:5174 electron dist-electron/main.mjs\"",
+    "dev:web": "vite",
+    "build:web": "vue-tsc --noEmit && vite build",
+    "build:electron": "node build-electron.mjs",
+    "build": "pnpm run build:web && pnpm run build:electron",
+    "build:win": "pnpm run build && electron-builder --win nsis --x64",
+    "build:win:portable": "pnpm run build && electron-builder --win portable --x64",
+    "build:win:dir": "pnpm run build && electron-builder --win dir --x64",
+    "lint": "eslint . --ext .vue,.ts,.tsx --fix"
+  },
+  "dependencies": {
+    "@cloudbase/js-sdk": "^3.7.1",
+    "echarts": "^5.5.1",
+    "element-plus": "^2.8.6",
+    "exceljs": "^4.4.0",
+    "pinia": "^2.2.4",
+    "vue": "^3.5.13",
+    "vue-router": "^4.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.7.5",
+    "@vitejs/plugin-vue": "^5.1.4",
+    "autoprefixer": "^10.4.20",
+    "concurrently": "^9.0.1",
+    "cross-env": "^7.0.3",
+    "electron": "^33.0.2",
+    "electron-builder": "^25.1.8",
+    "esbuild": "^0.24.0",
+    "postcss": "^8.4.47",
+    "tailwindcss": "^3.4.14",
+    "typescript": "^5.6.3",
+    "vite": "^5.4.10",
+    "vue-tsc": "^2.1.10",
+    "wait-on": "^8.0.5"
+  },
+  "build": {
+    "appId": "com.Mavis.course-tracker",
+    "productName": "一寸光阴",
+    "copyright": "Copyright © 2026 Mavis",
+    "directories": {
+      "output": "release/${version}",
+      "buildResources": "build"
+    },
+    "files": [
+      "dist/**/*",
+      "dist-electron/**/*"
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64"
+          ]
+        },
+        {
+          "target": "portable",
+          "arch": [
+            "x64"
+          ]
+        }
+      ],
+      "icon": "build/icon.ico",
+      "artifactName": "${productName}-${version}-${arch}.${ext}"
+    },
+    "portable": {
+      "artifactName": "${productName}-${version}-portable-${arch}.${ext}",
+      "requestExecutionLevel": "user",
+      "splashImage": null
+    },
+    "nsis": {
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "allowElevation": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "一寸光阴",
+      "deleteAppDataOnUninstall": false,
+      "language": "2052"
+    },
+    "publish": null
+  },
+  "pnpm": {
+    "onlyBuiltDependencies": [
+      "electron",
+      "esbuild"
+    ]
+  }
+}

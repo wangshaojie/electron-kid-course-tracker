@@ -1,0 +1,23 @@
+{
+  "$schema": "https://static.cloudbase.net/cli/cloudbaserc.schema.json",
+  "version": "2.0",
+  "envId": "kid-course-tracker-d6c2816e966b5",
+  "functionRoot": "functions",
+  "functions": [
+    {
+      "name": "auth-otp",
+      "runtime": "Nodejs18.15",
+      "timeout": 10,
+      "memorySize": 256,
+      "installDependency": false,
+      "handler": "index.main",
+      "envVariables": {
+        "TCB_ENV_ID": "kid-course-tracker-d6c2816e966b5",
+        "MAIL_FROM": "noreply@240730.xyz",
+        "MAIL_SUBJECT": "【一寸光阴】您的登录验证码",
+        "RESEND_API_KEY": "re_xxx_replace_me",
+        "CLOUDBASE_APIKEY": "xxx_replace_me_with_server_api_key"
+      }
+    }
+  ]
+}

@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  /* Element Plus CSS 变量主题 */
+  --el-color-primary: #3FB87A;
+  --el-color-primary-light-3: #5FCE89;
+  --el-color-primary-light-5: #94DFB0;
+  --el-color-primary-light-7: #C5EFD5;
+  --el-color-primary-light-8: #EAF8F0;
+  --el-color-primary-light-9: #F4FBF7;
+  --el-color-primary-dark-2: #2A9D63;
+  --el-color-success: #3FB87A;
+  --el-color-warning: #E08A1E;
+  --el-color-danger: #D94545;
+  --el-border-radius-base: 8px;
+  --el-font-family: 'PingFang SC', 'Microsoft YaHei UI', system-ui, sans-serif;
+}
+
+@layer base {
+  html, body, #app {
+    @apply h-full w-full;
+  }
+  body {
+    -webkit-font-smoothing: antialiased;
+  }
+}
+
+@layer components {
+  .card-base {
+    @apply rounded-xl bg-white p-4 shadow-card;
+  }
+  .stat-num {
+    @apply font-sans text-2xl font-bold tracking-tight;
+  }
+  .stat-label {
+    @apply text-sm text-ink-soft;
+  }
+}
+
+/* 路由转场 */
+.route-enter-active,
+.route-leave-active {
+  transition: all 0.25s ease;
+}
+.route-enter-from {
+  opacity: 0;
+  transform: translateY(8px);
+}
+.route-leave-to {
+  opacity: 0;
+  transform: translateY(-8px);
+}

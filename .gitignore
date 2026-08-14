@@ -1,0 +1,32 @@
+# ── 密钥 / 本地配置 ─────────────────────────────
+# cloudbaserc.json 含 RESEND_API_KEY / TCB_SDK_SECRET / JWT_SECRET，禁止提交
+cloudbaserc.json
+cloudbaserc.local.json
+
+# ── 日志 / 构建产物 ────────────────────────────
+*.log
+desktop/release/
+desktop/dist/
+desktop/dist-electron/
+desktop/node_modules/
+desktop/.vite/
+
+# ── 调试 / 废弃残留 ────────────────────────────
+.tmp/
+desktop/src/data.dead.bak.*/
+# 早期 Express 调试版（废弃 + 嵌套 git 仓库）
+express-kid-course-tracker/
+# auth-otp 调试残留
+cloudbase/functions/auth-otp/index.js.bak*
+cloudbase/functions/auth-otp/*.exports-main
+cloudbase/functions/auth-otp/diag.mjs
+cloudbase/functions/auth-otp/insert-*.mjs
+cloudbase/functions/auth-otp/_tmp-*.mjs.bak
+
+# ── 工具链 / 编辑器 ────────────────────────────
+.codebuddy/
+skills-lock.json
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db
