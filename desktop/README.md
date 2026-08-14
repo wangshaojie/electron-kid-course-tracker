@@ -142,6 +142,10 @@ pnpm exec electron-builder --win portable --x64 --config.directories.output="rel
 - `release/<ts>/一寸光阴-0.2.0-portable-x64.exe` — 绿色版 ~82 MB
 - `release/<ts>/win-unpacked/一寸光阴.exe` — 解包的可执行
 
+**已发布版本下载（GitHub Release）**：
+- https://github.com/wangshaojie/electron-kid-course-tracker/releases
+- 打 tag 流程：`git tag -a vX.Y.Z -m "..."` → `git push origin vX.Y.Z` → 在 GitHub Release 页 Draft 并上传产物
+
 ### 4.5 生产模式启动
 
 ```powershell
