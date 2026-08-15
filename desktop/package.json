@@ -73,10 +73,10 @@
         }
       ],
       "icon": "build/icon.ico",
-      "artifactName": "${productName}-${version}-${arch}.${ext}"
+      "artifactName": "TimeWell-${version}-${arch}.${ext}"
     },
     "portable": {
-      "artifactName": "${productName}-${version}-portable-${arch}.${ext}",
+      "artifactName": "TimeWell-${version}-portable-${arch}.${ext}",
       "requestExecutionLevel": "user",
       "splashImage": null
     },
