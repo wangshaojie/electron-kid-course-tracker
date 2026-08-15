@@ -212,10 +212,8 @@ kid-course-tracker/
 │   │   ├── types/           ← 共享 TS 类型
 │   │   ├── utils/           ← 日期/金额/校验/Excel
 │   │   └── styles/
-│   ├── cloudfunctions/      ← 旧 wx-server-sdk 版云函数（已废弃，保留作历史）
 │   └── release/             ← electron-builder 产物
 │
-├── scripts/                 ← 杂项脚本
 └── .agents/                 ← Mavis agent 配置
 ```
 

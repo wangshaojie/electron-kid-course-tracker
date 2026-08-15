@@ -9,22 +9,7 @@ Thumbs.db
 .idea
 .vscode
 
-# uni-app 历史版本残留（已废弃）
-pages/
-static/
-store/
-utils/
-components/
-unpackage/
-main.js
-manifest.json
-pages.json
-App.vue
-uni.scss
-uni.promisify.adaptor.js
-index-*.js
-index-*.css
-pnpm-ls.json
+# 密钥 / 本地配置（严禁提交）
 .env
 .env.local
 .env.*.local

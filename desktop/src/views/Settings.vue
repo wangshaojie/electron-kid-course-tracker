@@ -3,9 +3,8 @@
  * 设置
  *  - 孩子档案管理
  *  - 导出 Excel
- *  - 备份（整库 JSON）
- *  - 恢复
- *  - 清空（二次确认）
+ *  - 认领旧账号数据
+ *  - 清空指引（云端控制台）
  */
 import { ref } from 'vue'
 import { useCoursesStore } from '@/stores/courses'
@@ -89,13 +88,7 @@ async function onExportExcel() {
   }
 }
 
-async function onExportJSON() {
-  ElMessage.info('云同步版本请到 CloudBase 控制台 → 数据库 → 导出')
-}
 
-async function onImportJSON() {
-  ElMessage.info('云同步版本请到 CloudBase 控制台手动编辑数据')
-}
 
 /**
  * 紧急迁移：把"别人账号下的 children/courses/checkins"认领到当前账号
@@ -160,14 +153,7 @@ async function onMigrate() {
   }
 }
 
-async function onWipe() {
-  const ok = await dangerousConfirm({
-    title: '清空所有数据',
-    message: '本应用不提供一键清空，云端数据请到 CloudBase 控制台手动清理。',
-    keyword: '清空',
-    confirmText: '我已了解',
-  })
-  if (!ok) return
+function onWipe() {
   ElMessage.warning('请到 CloudBase 控制台清空数据（左侧导航 → 数据库 → 选表 → 删除行）')
 }
 </script>
@@ -254,16 +240,15 @@ async function onWipe() {
         </el-button>
       </div>
 
-      <!-- 备份 / 恢复 -->
+      <!-- 数据存储说明 -->
       <div class="card-base">
-        <h3 class="mb-1 font-bold text-ink">💾 备份与恢复</h3>
-        <p class="mb-3 text-sm text-ink-soft">
-          整库 JSON 备份：包含全部孩子档案、课程、打卡记录。恢复时会先清空再覆盖。
+        <h3 class="mb-1 font-bold text-ink">☁️ 数据存储</h3>
+        <p class="mb-1 text-sm text-ink-soft">
+          所有数据实时保存在云端 CloudBase PostgreSQL，多设备登录看到同一份数据，本地不维护副本。
         </p>
-        <div class="flex gap-2">
-          <el-button @click="onExportJSON">导出备份 (JSON)</el-button>
-          <el-button @click="onImportJSON">从备份恢复</el-button>
-        </div>
+        <p class="text-xs text-ink-ghost">
+          如需导出请使用上方「导出 Excel」；完整数据可到 CloudBase 控制台 → 数据库 手动导出。
+        </p>
       </div>
 
       <!-- 认领旧账号数据 -->
@@ -288,14 +273,14 @@ async function onWipe() {
         </p>
       </div>
 
-      <!-- 清空 -->
+      <!-- 清空指引 -->
       <div class="card-base border border-danger/30">
         <h3 class="mb-1 font-bold text-danger">🚨 清空所有数据</h3>
         <p class="mb-3 text-sm text-ink-soft">
-          删除全部孩子档案、课程和打卡记录。操作不可恢复，请先导出 Excel 或 JSON 备份。
+          数据存储在云端，本应用不提供一键清空（防止误删）。如需删除全部数据，请到 CloudBase 控制台操作。
         </p>
         <el-button type="danger" plain @click="onWipe">
-          清空所有数据
+          查看清空指引
         </el-button>
       </div>
 

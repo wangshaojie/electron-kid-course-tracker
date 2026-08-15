@@ -13,13 +13,6 @@ desktop/.vite/
 
 # ── 调试 / 废弃残留 ────────────────────────────
 .tmp/
-desktop/src/data.dead.bak.*/
-# auth-otp 调试残留
-cloudbase/functions/auth-otp/index.js.bak*
-cloudbase/functions/auth-otp/*.exports-main
-cloudbase/functions/auth-otp/diag.mjs
-cloudbase/functions/auth-otp/insert-*.mjs
-cloudbase/functions/auth-otp/_tmp-*.mjs.bak
 
 # ── 工具链 / 编辑器 ────────────────────────────
 .codebuddy/
