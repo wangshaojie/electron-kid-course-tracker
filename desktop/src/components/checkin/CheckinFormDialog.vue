@@ -68,14 +68,13 @@ async function onSubmit() {
   }
   submitting.value = true
   try {
-    checkins.create({
+    // create 内部已刷新 courses 聚合，这里不再重复请求
+    await checkins.create({
       course_id: form.value.course_id,
       date: form.value.date,
       hours: Number(form.value.hours),
       feedback: form.value.feedback,
     })
-    courses.refresh()
-    ElMessage.success('打卡成功')
     emit('saved')
     emit('update:modelValue', false)
   } catch (e) {

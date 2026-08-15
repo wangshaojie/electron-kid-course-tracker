@@ -6,7 +6,7 @@
  *   1) 输入邮箱 → "获取验证码" → auth.signInWithOtp → 邮件发码
  *   2) 输 6 位码 → "登录 / 注册" → data.verifyOtp({ token }) → 自动登录
  */
-import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
@@ -86,9 +86,6 @@ async function handleSubmit() {
   }
 }
 
-onMounted(() => {
-  // 无需特殊挂载
-})
 onUnmounted(() => {
   if (cooldownTimer !== null) window.clearInterval(cooldownTimer)
 })

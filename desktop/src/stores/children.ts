@@ -135,22 +135,12 @@ export const useChildrenStore = defineStore('children', () => {
     const lsActive = readLS()
 
     let resolved: string | null = null
-    let switchedFrom: 'cloud' | 'local' | 'first' = 'first'
-
-    if (cloudActive && list.find((c) => c.id === cloudActive)) {
+    if (cloudActive && list.some((c) => c.id === cloudActive)) {
       resolved = cloudActive
-      switchedFrom = 'cloud'
-    } else if (cloudActive) {
-      // 云端有偏好但孩子已被删/换设备
-      switchedFrom = 'cloud'
-    } else if (lsActive && list.find((c) => c.id === lsActive)) {
+    } else if (lsActive && list.some((c) => c.id === lsActive)) {
       resolved = lsActive
-      switchedFrom = 'local'
     }
-
-    if (!resolved) {
-      resolved = list[0]!.id
-    }
+    resolved ??= list[0]!.id
 
     activeId.value = resolved
     writeLS(resolved)
@@ -173,8 +163,6 @@ export const useChildrenStore = defineStore('children', () => {
       // 本地缓存和云端不同，以云端为准 + 刷本地
       writeLS(cloudActive)
     }
-    // 静默引用 switchedFrom 防止 lint 报 unused
-    void switchedFrom
 
     loaded.value = true
   }

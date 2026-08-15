@@ -4,16 +4,13 @@
  */
 import { computed, ref } from 'vue'
 import { useCoursesStore, type Course } from '@/stores/courses'
-import { useCheckinsStore } from '@/stores/checkins'
 import type { CourseSummary } from '@/types'
 import { formatMoney, formatHours } from '@/utils/money'
 import { confirm } from '@/utils/confirm'
-import { ElMessage } from 'element-plus'
 import CourseFormDialog from './CourseFormDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const courses = useCoursesStore()
-const checkins = useCheckinsStore()
 
 const dialogOpen = ref(false)
 const editingCourse = ref<Course | null>(null)
@@ -38,9 +35,8 @@ async function onDelete(c: Course) {
     type: 'warning',
   })
   if (!ok) return
-  courses.remove(c.id)
-  checkins.refresh()
-  ElMessage.success('已删除')
+  // remove 内部已刷新 courses + checkins，这里不再重复请求
+  await courses.remove(c.id)
 }
 
 function statusLabel(s: CourseSummary) {
@@ -151,6 +147,7 @@ function statusLabel(s: CourseSummary) {
       </el-table-column>
     </el-table>
 
-    <CourseFormDialog v-model="dialogOpen" :course="editingCourse" @saved="checkins.refresh()" />
+    <!-- 保存后 courses store 已自行刷新，checkins 不受影响，无需额外请求 -->
+    <CourseFormDialog v-model="dialogOpen" :course="editingCourse" />
   </div>
 </template>

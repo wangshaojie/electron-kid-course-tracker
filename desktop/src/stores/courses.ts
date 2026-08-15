@@ -102,8 +102,8 @@ export const useCoursesStore = defineStore('courses', () => {
     const children = useChildrenStore()
     const cid = children.activeIdSafe
     if (!cid) { items.value = []; return }
-    // 客户端聚合 used_hours：先查本 child 的 courses + checkins 再合并
-    // 为简化（避免双查询），本版本让 PG 在 SQL 中做 SUM；这里拆两次查
+    // 客户端聚合 used_hours：先查本 child 的 courses，再查 checkins 汇总
+    // 拆两条查询（单账号数据量小可接受）；后续可换 PG RPC 一条搞定
     const { data: courseRows, error } = await db.from('courses')
       .select('*')
       .eq('owner_id', uid)

@@ -63,11 +63,11 @@ export const useCheckinsStore = defineStore('checkins', () => {
     const cid = children.activeIdSafe
     if (!cid) throw new Error('请先创建孩子档案')
 
-    // 客户端预校验剩余课时（不严谨：只查了当前 child 的全部 checkins）
+    // 客户端预校验剩余课时（直接用 store 已聚合的 used_hours，避免重复查询）
     const courses = useCoursesStore()
     const course = courses.byId(input.course_id)
     if (course) {
-      const used = await sumHours(input.course_id)
+      const used = course.used_hours
       if (used + input.hours > course.total_hours) {
         throw new Error(`剩余课时不足（剩 ${round2(course.total_hours - used)} 节，要扣 ${input.hours}）`)
       }
@@ -99,13 +99,6 @@ export const useCheckinsStore = defineStore('checkins', () => {
     const courses = useCoursesStore()
     await courses.refresh()
     ElMessage.success('已删除打卡')
-  }
-
-  async function sumHours(courseId: string): Promise<number> {
-    const uid = requireUid()
-    const { data, error } = await db.from('checkins').select('hours').eq('owner_id', uid).eq('course_id', courseId)
-    if (error) return 0
-    return (data ?? []).reduce((s: number, r: { hours: number }) => s + Number(r.hours), 0)
   }
 
   return {

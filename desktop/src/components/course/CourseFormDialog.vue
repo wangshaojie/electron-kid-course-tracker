@@ -85,12 +85,11 @@ async function onSubmit() {
   }
   submitting.value = true
   try {
+    // update/create 内部已刷新 store 并弹成功提示，这里只 await 收尾
     if (isEdit.value && props.course) {
-      courses.update(props.course.id, form.value)
-      ElMessage.success('已保存')
+      await courses.update(props.course.id, form.value)
     } else {
-      courses.create(form.value)
-      ElMessage.success('已新增')
+      await courses.create(form.value)
     }
     emit('saved')
     emit('update:modelValue', false)

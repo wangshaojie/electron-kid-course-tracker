@@ -2,12 +2,11 @@
 /**
  * 打卡记录表
  */
-import { ref, computed, watch } from 'vue'
+import { ref, computed } from 'vue'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useCoursesStore } from '@/stores/courses'
 import { confirm } from '@/utils/confirm'
-import { ElMessage } from 'element-plus'
-import { todayStr } from '@/utils/date'
+import { todayStr, toDateStr } from '@/utils/date'
 import CheckinFormDialog from './CheckinFormDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 import type { Checkin } from '@/stores/checkins'
@@ -41,9 +40,8 @@ async function onDelete(c: Checkin) {
     type: 'warning',
   })
   if (!ok) return
-  checkins.remove(c.id)
-  courses.refresh()
-  ElMessage.success('已删除，课时已回滚')
+  // remove 内部已刷新 courses 聚合，这里不再重复请求
+  await checkins.remove(c.id)
 }
 
 function applyQuickRange(preset: 'week' | 'month' | 'all') {
@@ -58,16 +56,6 @@ function applyQuickRange(preset: 'week' | 'month' | 'all') {
   dateRange.value = [toDateStr(from), todayStr()]
 }
 
-function toDateStr(d: Date) {
-  const y = d.getFullYear()
-  const m = String(d.getMonth() + 1).padStart(2, '0')
-  const day = String(d.getDate()).padStart(2, '0')
-  return `${y}-${m}-${day}`
-}
-
-watch(filterCourse, () => {
-  // 触发响应式
-})
 </script>
 
 <template>

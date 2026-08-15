@@ -53,12 +53,12 @@ onUnmounted(() => {
   chart.value = null
 })
 
+// option 由父组件 computed 生成新对象，引用变化即触发，无需 deep watch
 watch(
   () => props.option,
   (v) => {
     chart.value?.setOption(v, true)
   },
-  { deep: true },
 )
 </script>
 

@@ -16,8 +16,11 @@ function sumHoursByCourse(checkins: Checkin[], courseId: string): number {
     .reduce((s, c) => s + Number(c.hours), 0)
 }
 
+/** 导出需要的课程字段（不含客户端聚合的 used_hours 等，方便直接传云端原始行） */
+export type CourseRow = Omit<Course, 'used_hours' | 'remain_hours' | 'price_per_hour'>
+
 export async function exportToExcel(
-  courses: Course[],
+  courses: CourseRow[],
   checkins: Checkin[],
 ): Promise<Blob> {
   const wb = new ExcelJS.Workbook()

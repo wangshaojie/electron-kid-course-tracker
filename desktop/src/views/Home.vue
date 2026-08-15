@@ -44,12 +44,6 @@ function quickCheckin(id: string) {
   checkinDialogOpen.value = true
 }
 
-function onSaved() {
-  // refresh
-  courses.refresh()
-  checkins.refresh()
-}
-
 function viewAll() {
   void router.push('/checkins')
 }
@@ -226,7 +220,6 @@ async function signOut() {
     <CheckinFormDialog
       v-model="checkinDialogOpen"
       :preselected-course-id="preselectedId"
-      @saved="onSaved"
     />
     </template>
   </div>

@@ -3,7 +3,6 @@
  * 设置
  *  - 孩子档案管理
  *  - 导出 Excel
- *  - 认领旧账号数据
  *  - 清空指引（云端控制台）
  */
 import { ref } from 'vue'
@@ -12,6 +11,7 @@ import { useCheckinsStore } from '@/stores/checkins'
 import { useChildrenStore, type Child } from '@/stores/children'
 import { dangerousConfirm } from '@/utils/confirm'
 import { exportToExcel } from '@/utils/excel'
+import { db, getActiveUid } from '@/lib/cloudbase'
 import { ElMessage } from 'element-plus'
 import { todayStr } from '@/utils/date'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
@@ -36,8 +36,8 @@ function openEdit(c: Child) {
 async function onSetActive(c: Child) {
   if (c.id === children.activeId) return
   await children.setActive(c.id)
-  courses.refresh()
-  checkins.refresh()
+  await courses.refresh()
+  await checkins.refresh()
   ElMessage.success(`已切换到「${c.name}」`)
 }
 
@@ -53,27 +53,30 @@ async function onDelete(c: Child) {
     confirmText: '我已了解风险，删除',
   })
   if (!ok) return
-  children.remove(c.id)
-  courses.refresh()
-  checkins.refresh()
-  ElMessage.success('已删除')
+  // remove 内部会切到下一个孩子，这里等待其完成后再刷新业务数据
+  await children.remove(c.id)
+  await courses.refresh()
+  await checkins.refresh()
 }
 
 async function onExportExcel() {
   try {
-    // 导出所有孩子的全部数据
-    const allCourses: typeof courses.items = []
-    const allCheckins: typeof checkins.items = []
-    for (const c of children.items) {
-      await children.setActive(c.id)
-      courses.refresh()
-      checkins.refresh()
-      allCourses.push(...courses.items)
-      allCheckins.push(...checkins.items)
+    // 一次性全量查询所有孩子的数据（不切换激活孩子，0 副作用）
+    const uid = getActiveUid()
+    if (!uid) {
+      ElMessage.error('未登录，无法导出')
+      return
     }
-    // 回到默认 active（也可以停在最后一个）
-    // 不切换回 —— 让用户看到切换结果
-    const blob = await exportToExcel(allCourses, allCheckins)
+    const [courseRes, checkinRes] = await Promise.all([
+      db.from('courses').select('*').eq('owner_id', uid),
+      db.from('checkins').select('*').eq('owner_id', uid),
+    ])
+    if (courseRes.error) throw courseRes.error
+    if (checkinRes.error) throw checkinRes.error
+    const blob = await exportToExcel(
+      (courseRes.data ?? []) as Parameters<typeof exportToExcel>[0],
+      (checkinRes.data ?? []) as Parameters<typeof exportToExcel>[1],
+    )
     const file = `kid-course-tracker_${todayStr()}.xlsx`
     const path = await window.kidfs.saveDialog({
       defaultName: file,
@@ -82,74 +85,9 @@ async function onExportExcel() {
     if (!path) return
     const buf = new Uint8Array(await blob.arrayBuffer())
     await window.kidfs.writeFile(path, buf)
-    ElMessage.success(`已导出 ${children.count} 个孩子的全部数据`)
+    ElMessage.success(`已导出全部孩子（${children.count} 个）的课程和打卡数据`)
   } catch (e) {
     ElMessage.error('导出失败：' + (e as Error).message)
-  }
-}
-
-
-
-/**
- * 紧急迁移：把"别人账号下的 children/courses/checkins"认领到当前账号
- * 用法：选一个目标 owner_id（提示用户去 CloudBase 查表复制），点确认就改 owner_id
- *
- * 为什么不直接做成"扫一遍云端所有 children 让用户选"：
- *  业务表 RLS 关闭、anon publishable key 走的是真 service role，可以直接读
- *  但跨用户查可能误改；用显式确认 + 输入框更稳
- */
-const migrating = ref(false)
-const migrateOldUid = ref('')
-async function onMigrate() {
-  const oldUid = migrateOldUid.value.trim()
-  if (!oldUid) {
-    ElMessage.warning('请输入要迁移的旧 owner_id')
-    return
-  }
-  const ok = await dangerousConfirm({
-    title: '认领数据',
-    message:
-      `会把 owner_id = ${oldUid} 的所有 children/courses/checkins 改到你当前账号下。\n` +
-      '操作不可逆，请确认旧 owner_id 是你之前的账号。',
-    keyword: '认领',
-    confirmText: '我已了解，认领',
-  })
-  if (!ok) return
-  const uid = (await import('@/lib/cloudbase')).getActiveUid()
-  if (!uid) {
-    ElMessage.error('未登录')
-    return
-  }
-  migrating.value = true
-  try {
-    const { db } = await import('@/lib/cloudbase')
-    let total = 0
-    for (const table of ['children', 'courses', 'checkins']) {
-      const { data, error } = await db
-        .from(table)
-        .update({ owner_id: uid })
-        .eq('owner_id', oldUid)
-        .select('id')
-      if (error) throw error
-      total += data?.length ?? 0
-    }
-    // 把 user_prefs 也搬过来（如果有的话）
-    const { db: db2 } = await import('@/lib/cloudbase')
-    const { error: prefErr } = await db2
-      .from('user_prefs')
-      .update({ owner_id: uid })
-      .eq('owner_id', oldUid)
-    if (prefErr) console.warn('user_prefs migrate warn:', prefErr)
-    ElMessage.success(`认领完成，共迁移 ${total} 条业务数据`)
-    migrateOldUid.value = ''
-    // 重新拉一次
-    await children.load()
-    courses.refresh()
-    checkins.refresh()
-  } catch (e) {
-    ElMessage.error('迁移失败：' + (e as Error).message)
-  } finally {
-    migrating.value = false
   }
 }
 
@@ -248,28 +186,6 @@ function onWipe() {
         </p>
         <p class="text-xs text-ink-ghost">
           如需导出请使用上方「导出 Excel」；完整数据可到 CloudBase 控制台 → 数据库 手动导出。
-        </p>
-      </div>
-
-      <!-- 认领旧账号数据 -->
-      <div class="card-base border border-sun-200 bg-sun-50/30">
-        <h3 class="mb-1 font-bold text-ink">🔄 认领旧账号数据</h3>
-        <p class="mb-3 text-sm text-ink-soft">
-          之前用别的邮箱录过数据？现在想把那些孩子/课程/打卡挪到当前账号下：
-        </p>
-        <div class="mb-2 flex gap-2">
-          <el-input
-            v-model="migrateOldUid"
-            placeholder="旧的 owner_id（去 CloudBase 控制台 children 表 owner_id 列复制）"
-            clearable
-            class="flex-1"
-          />
-          <el-button type="primary" :loading="migrating" @click="onMigrate">
-            认领
-          </el-button>
-        </div>
-        <p class="text-xs text-ink-ghost">
-          改的是 owner_id 字段，不会丢数据。二次确认后才能执行。
         </p>
       </div>
 
