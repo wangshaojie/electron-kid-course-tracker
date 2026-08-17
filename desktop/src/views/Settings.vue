@@ -5,13 +5,14 @@
  *  - 导出 Excel
  *  - 清空指引（云端控制台）
  */
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useChildrenStore, type Child } from '@/stores/children'
 import { dangerousConfirm } from '@/utils/confirm'
-import { exportToExcel } from '@/utils/excel'
-import { db, getActiveUid } from '@/lib/cloudbase'
+import { exportToExcel, type CourseRow } from '@/utils/excel'
+import type { Checkin } from '@/stores/checkins'
+import { businessApi, getActiveUid } from '@/lib/cloudbase'
 import { ElMessage } from 'element-plus'
 import { todayStr } from '@/utils/date'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
@@ -22,6 +23,64 @@ const children = useChildrenStore()
 
 const createOpen = ref(false)
 const editingChild = ref<Child | null>(null)
+
+// ---- 导出选项（孩子 / 科目多选 / 时间范围）----
+const exportOpen = ref(false)
+const exportLoading = ref(false)
+const exportExporting = ref(false)
+const exportScope = ref<string>('all') // 'all' 或 child.id
+const exportCourseIds = ref<string[]>([])
+const exportDateRange = ref<[string, string] | null>(null)
+// 全量数据（打开弹窗时拉取一次，客户端过滤，避免多次请求）
+const allCourses = ref<CourseRow[]>([])
+const allCheckins = ref<Checkin[]>([])
+
+const scopedCourses = computed(() =>
+  allCourses.value.filter((c) => exportScope.value === 'all' || c.child_id === exportScope.value),
+)
+const usedHoursByCourse = computed(() => {
+  const m = new Map<string, number>()
+  for (const c of allCheckins.value) {
+    m.set(c.course_id, (m.get(c.course_id) ?? 0) + Number(c.hours))
+  }
+  return m
+})
+const selectedCourseCount = computed(() => exportCourseIds.value.length)
+
+async function openExportDialog() {
+  exportOpen.value = true
+  exportLoading.value = true
+  try {
+    if (!getActiveUid()) {
+      ElMessage.error('未登录，无法导出')
+      exportOpen.value = false
+      return
+    }
+    const [courseRows, checkinRows] = await Promise.all([
+      businessApi<CourseRow[]>('GET', '/b/courses'),
+      businessApi<Checkin[]>('GET', '/b/checkins'),
+    ])
+    allCourses.value = courseRows
+    allCheckins.value = checkinRows
+    // 默认全选全部科目
+    exportScope.value = 'all'
+    exportCourseIds.value = courseRows.map((c) => c.id)
+    exportDateRange.value = null
+  } catch (e) {
+    ElMessage.error('读取数据失败：' + (e as Error).message)
+  } finally {
+    exportLoading.value = false
+  }
+}
+
+function onScopeChange() {
+  // 切换孩子时重置科目选择为该孩子下全部课程
+  exportCourseIds.value = scopedCourses.value.map((c) => c.id)
+}
+
+function toggleAllCourses(on: boolean) {
+  exportCourseIds.value = on ? scopedCourses.value.map((c) => c.id) : []
+}
 
 function openCreate() {
   editingChild.value = null
@@ -61,22 +120,41 @@ async function onDelete(c: Child) {
 
 async function onExportExcel() {
   try {
-    // 一次性全量查询所有孩子的数据（不切换激活孩子，0 副作用）
-    const uid = getActiveUid()
-    if (!uid) {
-      ElMessage.error('未登录，无法导出')
+    if (exportCourseIds.value.length === 0) {
+      ElMessage.warning('请至少选择一个科目')
       return
     }
-    const [courseRes, checkinRes] = await Promise.all([
-      db.from('courses').select('*').eq('owner_id', uid),
-      db.from('checkins').select('*').eq('owner_id', uid),
-    ])
-    if (courseRes.error) throw courseRes.error
-    if (checkinRes.error) throw checkinRes.error
-    const blob = await exportToExcel(
-      (courseRes.data ?? []) as Parameters<typeof exportToExcel>[0],
-      (checkinRes.data ?? []) as Parameters<typeof exportToExcel>[1],
+    if (!getActiveUid()) return
+    exportExporting.value = true
+
+    // 按所选孩子过滤课程
+    const courseRows = allCourses.value.filter(
+      (c) => exportScope.value === 'all' || c.child_id === exportScope.value,
     )
+    const pickedIds = new Set(exportCourseIds.value)
+    const pickedCourses = courseRows.filter((c) => pickedIds.has(c.id))
+
+    // 按所选孩子 + 科目 + 时间范围过滤打卡
+    const [from, to] = exportDateRange.value ?? []
+    const checkinRows = allCheckins.value.filter(
+      (c) =>
+        (exportScope.value === 'all' || c.child_id === exportScope.value) &&
+        pickedIds.has(c.course_id) &&
+        (!from || c.date >= from) &&
+        (!to || c.date <= to),
+    )
+
+    const childLabel =
+      exportScope.value === 'all'
+        ? `全部 ${children.count} 个孩子`
+        : `「${children.getById(exportScope.value)?.name ?? ''}」`
+    const rangeLabel =
+      from && to ? `${from} ~ ${to}` : from ? `${from} 起` : to ? `截至 ${to}` : '全部时间'
+
+    const blob = await exportToExcel(pickedCourses, checkinRows, {
+      childLabel,
+      rangeLabel,
+    })
     const file = `kid-course-tracker_${todayStr()}.xlsx`
     const path = await window.kidfs.saveDialog({
       defaultName: file,
@@ -85,9 +163,12 @@ async function onExportExcel() {
     if (!path) return
     const buf = new Uint8Array(await blob.arrayBuffer())
     await window.kidfs.writeFile(path, buf)
-    ElMessage.success(`已导出全部孩子（${children.count} 个）的课程和打卡数据`)
+    ElMessage.success(`已导出 ${childLabel} · ${pickedCourses.length} 门科目 · ${checkinRows.length} 条打卡`)
+    exportOpen.value = false
   } catch (e) {
     ElMessage.error('导出失败：' + (e as Error).message)
+  } finally {
+    exportExporting.value = false
   }
 }
 
@@ -171,10 +252,10 @@ function onWipe() {
       <div class="card-base">
         <h3 class="mb-1 font-bold text-ink">📊 导出 Excel</h3>
         <p class="mb-3 text-sm text-ink-soft">
-          导出全部孩子（不只是当前激活）的课程和打卡记录，3 个 sheet：课程总览 / 打卡记录 / 汇总。
+          可选择孩子、勾选科目、限定上课时间范围；每门课程一个 sheet（课程信息 + 课时明细），外加汇总 sheet。
         </p>
-        <el-button type="primary" @click="onExportExcel">
-          导出全部 Excel
+        <el-button type="primary" @click="openExportDialog">
+          导出 Excel…
         </el-button>
       </div>
 
@@ -220,5 +301,114 @@ function onWipe() {
       :child="editingChild"
       @saved="courses.refresh(); checkins.refresh()"
     />
+
+    <!-- 导出选项：孩子 / 科目多选 / 上课时间范围 -->
+    <el-dialog
+      v-model="exportOpen"
+      title="导出 Excel"
+      width="480"
+      align-center
+      :close-on-click-modal="false"
+      destroy-on-close
+    >
+      <div v-if="exportLoading" class="flex flex-col items-center justify-center py-12">
+        <span class="export-spinner" />
+        <p class="mt-3 text-sm text-ink-soft">正在读取课程和打卡数据…</p>
+      </div>
+
+      <el-form v-else label-position="top" class="export-form">
+        <el-form-item label="孩子">
+          <el-select v-model="exportScope" class="w-full" @change="onScopeChange">
+            <el-option label="全部孩子" value="all" />
+            <el-option v-for="c in children.items" :key="c.id" :label="c.name" :value="c.id" />
+          </el-select>
+        </el-form-item>
+
+        <el-form-item label="科目（多选）">
+          <div class="mb-2 flex items-center justify-between text-xs text-ink-soft">
+            <span>已选 {{ selectedCourseCount }} / {{ scopedCourses.length }} 门</span>
+            <div>
+              <el-button link type="primary" size="small" @click="toggleAllCourses(true)">全选</el-button>
+              <el-button link size="small" @click="toggleAllCourses(false)">清空</el-button>
+            </div>
+          </div>
+          <el-checkbox-group v-model="exportCourseIds" class="export-courses">
+            <el-checkbox v-for="c in scopedCourses" :key="c.id" :value="c.id">
+              <span class="font-medium">{{ c.name }}</span>
+              <span class="ml-1 text-xs text-ink-ghost">
+                （剩 {{ Number(c.total_hours) - (usedHoursByCourse.get(c.id) ?? 0) }} 节）
+              </span>
+            </el-checkbox>
+          </el-checkbox-group>
+        </el-form-item>
+
+        <el-form-item label="上课时间范围（可选）">
+          <el-date-picker
+            v-model="exportDateRange"
+            type="daterange"
+            range-separator="至"
+            start-placeholder="开始日期"
+            end-placeholder="结束日期"
+            value-format="YYYY-MM-DD"
+            format="YYYY-MM-DD"
+            class="w-full"
+          />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="exportOpen = false">取消</el-button>
+        <el-button
+          type="primary"
+          :loading="exportExporting"
+          :disabled="exportLoading || selectedCourseCount === 0"
+          @click="onExportExcel"
+        >
+          开始导出
+        </el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
+
+<style scoped>
+.export-form :deep(.el-form-item) { margin-bottom: 16px; }
+.export-form :deep(.el-form-item__label) { line-height: 20px; }
+.export-courses {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 4px 12px;
+  width: 100%;
+  max-height: 220px;
+  overflow-y: auto;
+  padding: 8px 10px;
+  border: 1px solid #d1e7dd;
+  border-radius: 8px;
+  background: #F7FAF8;
+}
+.export-courses :deep(.el-checkbox) {
+  height: 30px;
+  margin-right: 0;
+}
+.export-courses :deep(.el-checkbox__label) {
+  display: inline-flex;
+  align-items: baseline;
+  min-width: 0;
+  white-space: nowrap;
+}
+.export-courses :deep(.el-checkbox__label span:first-child) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.export-spinner {
+  width: 28px;
+  height: 28px;
+  border: 3px solid #dcefe3;
+  border-top-color: #3FB87A;
+  border-radius: 50%;
+  animation: export-spin 0.8s linear infinite;
+}
+@keyframes export-spin {
+  to { transform: rotate(360deg); }
+}
+</style>
