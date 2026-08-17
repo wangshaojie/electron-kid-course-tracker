@@ -14,7 +14,18 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { otpSend, otpVerify, getActiveUser, getActiveJwt, persistSession, clearSession, type SessionUser } from '@/lib/cloudbase'
+import {
+  otpSend,
+  otpVerify,
+  passwordLogin,
+  setPassword as setPasswordApi,
+  resetPassword as resetPasswordApi,
+  getActiveUser,
+  getActiveJwt,
+  persistSession,
+  clearSession,
+  type SessionUser,
+} from '@/lib/cloudbase'
 
 export const useAuthStore = defineStore('auth', () => {
   const user = ref<SessionUser | null>(null)
@@ -65,11 +76,42 @@ export const useAuthStore = defineStore('auth', () => {
     const r = await otpVerify(email, code)
     if (!r.ok) return { error: r.error }
     token.value = r.token
-    user.value = { uid: r.uid, email: r.email }
+    user.value = { uid: r.uid, email: r.email, role: r.role }
     status.value = 'authenticated'
     userRev.value += 1
     persistSession(r.token, user.value, remember)
     persistEmail(email)
+    return { error: null }
+  }
+
+  /** 密码登录：成功路径与 verifyCode 完全一致（存 token + userRev+1 触发业务重载） */
+  async function loginWithPassword(
+    email: string,
+    password: string,
+    remember: boolean = true,
+  ): Promise<{ error: string | null }> {
+    const r = await passwordLogin(email, password)
+    if (!r.ok) return { error: r.error }
+    token.value = r.token
+    user.value = { uid: r.uid, email: r.email, role: r.role }
+    status.value = 'authenticated'
+    userRev.value += 1
+    persistSession(r.token, user.value, remember)
+    persistEmail(email)
+    return { error: null }
+  }
+
+  /** 设置 / 修改密码（验证码确认邮箱所有权；首次设置也走这里） */
+  async function setPassword(email: string, code: string, password: string): Promise<{ error: string | null }> {
+    const r = await setPasswordApi(email, code, password)
+    if (!r.ok) return { error: r.error }
+    return { error: null }
+  }
+
+  /** 忘记密码重置（后端与 setPassword 同逻辑，前端文案不同） */
+  async function resetPassword(email: string, code: string, password: string): Promise<{ error: string | null }> {
+    const r = await resetPasswordApi(email, code, password)
+    if (!r.ok) return { error: r.error }
     return { error: null }
   }
 
@@ -92,6 +134,9 @@ export const useAuthStore = defineStore('auth', () => {
     bootstrap,
     sendCode,
     verifyCode,
+    loginWithPassword,
+    setPassword,
+    resetPassword,
     signOut,
   }
 })

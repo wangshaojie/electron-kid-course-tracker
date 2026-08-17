@@ -2,9 +2,12 @@
  * auth-otp —— 自建邮箱 OTP（用 Resend 发邮件）
  *
  * 路由（HTTP Function on port 9000）：
- *   POST /send    { email }                    → 生成 6 位码 + 存 PG + 调 Resend 发邮件
- *   POST /verify  { email, code }             → 校验码 + 标记 consumed + 返回自签 JWT
- *   GET  /health                              → { ok: true }
+ *   POST /send            { email }                       → 生成 6 位码 + 存 PG + 调 Resend 发邮件
+ *   POST /verify          { email, code }                 → 校验码 + 标记 consumed + 返回自签 JWT
+ *   POST /login           { email, password }             → 密码登录（可选；未设密码返回统一错误防枚举）
+ *   POST /set-password    { email, code, password }       → 验证码确认邮箱所有权后 设置/修改 密码
+ *   POST /reset-password  { email, code, password }       → 忘记密码重置（与 set-password 同逻辑）
+ *   GET  /health                                          → { ok: true }
  *
  * 环境变量（在 tcb 部署时通过 cloudbaserc.json envVariables 注入）：
  *   - RESEND_API_KEY    Resend 的 API key
@@ -37,6 +40,17 @@ const MAIL_FROM = process.env.MAIL_FROM || 'onboarding@resend.dev'
 const MAIL_SUBJECT = process.env.MAIL_SUBJECT || '【一寸光阴】您的登录验证码'
 const JWT_SECRET = process.env.JWT_SECRET || 'change-me-in-prod-please-this-is-a-default'
 const TCB_ENV_ID = process.env.TCB_ENV_ID
+
+// 管理员邮箱白名单（逗号分隔），匹配（lowercase trim）则 JWT 拿 role: 'admin'
+// 修改后老 JWT 在 30 天内仍有效——data-api 不信任 JWT role，每次现查 ADMIN_EMAILS
+const ADMIN_EMAILS = (process.env.ADMIN_EMAILS || '')
+  .split(',')
+  .map((s) => s.trim().toLowerCase())
+  .filter(Boolean)
+const adminEmailSet = new Set(ADMIN_EMAILS)
+function isAdminEmail(email) {
+  return typeof email === 'string' && adminEmailSet.has(email.trim().toLowerCase())
+}
 
 if (!RESEND_API_KEY) console.error('[auth-otp] RESEND_API_KEY is not set')
 if (!TCB_ENV_ID) console.error('[auth-otp] TCB_ENV_ID is not set')
@@ -95,11 +109,109 @@ function hashCode(code, salt) {
   return crypto.createHash('sha256').update(`${salt}:${code}`).digest('hex')
 }
 
+// ============ 密码（可选登录方式，与验证码并存）============
+// 哈希：Node 内置 crypto.scryptSync（零新依赖），存储格式 scrypt$N$r$p$salt$hash，
+// 参数内嵌在串里，将来要升级强度可直接重哈希
+const PASSWORD_MIN_LEN = 8
+const LOGIN_FAIL_LIMIT = 5 // 连续失败 5 次锁 15 分钟（内存 Map，冷启动重置可接受）
+const LOGIN_LOCK_MS = 15 * 60 * 1000
+const loginFails = new Map() // email -> { count, lockedAt }
+
+function hashPassword(password) {
+  const salt = crypto.randomBytes(16).toString('hex')
+  const N = 16384
+  const r = 8
+  const p = 1
+  const hash = crypto.scryptSync(password, salt, 64, { N, r, p })
+  return `scrypt$${N}$${r}$${p}$${salt}$${hash.toString('hex')}`
+}
+
+function verifyPassword(password, stored) {
+  try {
+    const parts = String(stored).split('$')
+    if (parts[0] !== 'scrypt' || parts.length !== 6) return false
+    const [, N, r, p, salt, hashHex] = parts
+    const expected = Buffer.from(hashHex, 'hex')
+    const actual = crypto.scryptSync(password, salt, expected.length, {
+      N: Number(N),
+      r: Number(r),
+      p: Number(p),
+    })
+    return crypto.timingSafeEqual(actual, expected)
+  } catch {
+    return false
+  }
+}
+
+// 密码规则：≥ 8 位，至少含字母 + 数字（前端 + 服务端双重校验）
+function isValidPassword(pw) {
+  return typeof pw === 'string' && pw.length >= PASSWORD_MIN_LEN && /[A-Za-z]/.test(pw) && /\d/.test(pw)
+}
+
+// 校验邮箱的 6 位 OTP 并标记 consumed（/verify 与 /set-password 共用）
+// 返回 { ok: true } | { ok: false, status, error }
+async function verifyOtpAndConsume(email, code) {
+  const now = new Date().toISOString()
+  let q
+  try {
+    q = await rdb()
+      .from('email_otps')
+      .select('*')
+      .eq('email', email)
+      .order('created_at', { ascending: false })
+      .limit(10)
+  } catch (e) {
+    console.error('[otp] rdb.select threw:', e)
+    return { ok: false, status: 500, error: 'db_error' }
+  }
+  if (q && q.error) {
+    console.error('[otp] rdb.select error:', JSON.stringify(q.error))
+    return { ok: false, status: 500, error: 'db_error' }
+  }
+  const all = Array.isArray(q.data) ? q.data : q.data ? [q.data] : []
+  const list = all.filter((r) => r.consumed_at == null && new Date(r.expires_at).getTime() >= Date.now())
+  if (list.length === 0) {
+    return { ok: false, status: 401, error: 'no_active_code' }
+  }
+  const row = list[0]
+
+  if (new Date(row.expires_at).getTime() < Date.now()) {
+    return { ok: false, status: 401, error: 'code_expired' }
+  }
+  if ((row.attempts || 0) >= 5) {
+    return { ok: false, status: 401, error: 'too_many_attempts' }
+  }
+
+  const codeHash = hashCode(code, row.salt)
+  if (codeHash !== row.code_hash) {
+    try {
+      await rdb()
+        .from('email_otps')
+        .update({ attempts: (row.attempts || 0) + 1 })
+        .eq('id', row.id)
+    } catch (e) {
+      console.error('[otp] attempts update failed:', e)
+    }
+    return { ok: false, status: 401, error: 'code_mismatch' }
+  }
+
+  try {
+    await rdb()
+      .from('email_otps')
+      .update({ consumed_at: now })
+      .eq('id', row.id)
+  } catch (e) {
+    console.error('[otp] consumed update failed:', e)
+    return { ok: false, status: 500, error: 'db_error' }
+  }
+  return { ok: true }
+}
+
 // 简单自签 JWT（HS256）
-function signJwt({ email, uid }, ttlSec = 60 * 60 * 24 * 30) {
+function signJwt({ email, uid, role }, ttlSec = 60 * 60 * 24 * 30) {
   const header = { alg: 'HS256', typ: 'JWT' }
   const now = Math.floor(Date.now() / 1000)
-  const payload = { email, uid, iat: now, exp: now + ttlSec }
+  const payload = { email, uid, role: role || 'user', iat: now, exp: now + ttlSec }
   const b64 = (o) => Buffer.from(JSON.stringify(o)).toString('base64url')
   const data = `${b64(header)}.${b64(payload)}`
   const sig = crypto.createHmac('sha256', JWT_SECRET).update(data).digest('base64url')
@@ -215,64 +327,91 @@ async function handleVerify(req, res, body) {
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' }, req)
   if (!/^\d{6}$/.test(code)) return sendJson(res, 400, { error: 'invalid_code' }, req)
 
-  const now = new Date().toISOString()
-  let q
+  const r = await verifyOtpAndConsume(email, code)
+  if (!r.ok) return sendJson(res, r.status, { error: r.error }, req)
+
+  const uid = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32)
+  const role = isAdminEmail(email) ? 'admin' : 'user'
+  const token = signJwt({ email, uid, role })
+
+  return sendJson(res, 200, { ok: true, token, uid, email, role }, req)
+}
+
+// 密码登录：查 user_passwords → scrypt 比对 → 成功签与 /verify 完全相同的 JWT
+// 安全点：未设密码 / 密码错 统一返回 invalid_credentials（防邮箱枚举）；失败 5 次锁 15 分钟
+async function handleLogin(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase()
+  const password = String(body.password || '')
+  if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' }, req)
+  if (!password) return sendJson(res, 400, { error: 'invalid_password' }, req)
+
+  // 锁频检查（内存 Map；冷启动重置可接受）
+  const lock = loginFails.get(email)
+  if (lock && Date.now() - lock.lockedAt < LOGIN_LOCK_MS) {
+    const retryAfterSec = Math.ceil((LOGIN_LOCK_MS - (Date.now() - lock.lockedAt)) / 1000)
+    return sendJson(res, 429, { error: 'too_many_login_attempts', retryAfterSec }, req)
+  }
+  if (lock) loginFails.delete(email)
+
+  let row = null
   try {
-    q = await rdb()
-      .from('email_otps')
-      .select('*')
-      .eq('email', email)
-      .order('created_at', { ascending: false })
-      .limit(10)
+    const q = await rdb().from('user_passwords').select('*').eq('email', email).limit(1)
+    if (q && q.error) throw new Error(q.error.message || JSON.stringify(q.error))
+    row = Array.isArray(q.data) ? q.data[0] : q.data
   } catch (e) {
-    console.error('[verify] rdb.select threw:', e)
-    return sendJson(res, 500, { error: 'db_error', detail: e?.message || String(e) }, req)
-  }
-  if (q && q.error) {
-    console.error('[verify] rdb.select error:', JSON.stringify(q.error))
-    return sendJson(res, 500, { error: 'db_error', detail: q.error.message || JSON.stringify(q.error) }, req)
-  }
-  const all = Array.isArray(q.data) ? q.data : q.data ? [q.data] : []
-  const list = all.filter((r) => r.consumed_at == null && new Date(r.expires_at).getTime() >= Date.now())
-  if (list.length === 0) {
-    return sendJson(res, 401, { error: 'no_active_code' }, req)
-  }
-  const row = list[0]
-
-  if (new Date(row.expires_at).getTime() < Date.now()) {
-    return sendJson(res, 401, { error: 'code_expired' }, req)
-  }
-  if ((row.attempts || 0) >= 5) {
-    return sendJson(res, 401, { error: 'too_many_attempts' }, req)
-  }
-
-  const codeHash = hashCode(code, row.salt)
-  if (codeHash !== row.code_hash) {
-    try {
-      await rdb()
-        .from('email_otps')
-        .update({ attempts: (row.attempts || 0) + 1 })
-        .eq('id', row.id)
-    } catch (e) {
-      console.error('[verify] attempts update failed:', e)
-    }
-    return sendJson(res, 401, { error: 'code_mismatch' }, req)
-  }
-
-  try {
-    await rdb()
-      .from('email_otps')
-      .update({ consumed_at: now })
-      .eq('id', row.id)
-  } catch (e) {
-    console.error('[verify] consumed update failed:', e)
+    console.error('[login] rdb.select error:', e)
     return sendJson(res, 500, { error: 'db_error' }, req)
   }
 
-  const uid = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32)
-  const token = signJwt({ email, uid })
+  const ok = !!row && verifyPassword(password, row.password_hash)
+  if (!ok) {
+    const cur = loginFails.get(email) || { count: 0, lockedAt: 0 }
+    cur.count += 1
+    if (cur.count >= LOGIN_FAIL_LIMIT) {
+      cur.count = 0
+      cur.lockedAt = Date.now()
+    }
+    loginFails.set(email, cur)
+    return sendJson(res, 401, { error: 'invalid_credentials' }, req)
+  }
+  loginFails.delete(email)
 
-  return sendJson(res, 200, { ok: true, token, uid, email }, req)
+  const uid = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32)
+  const role = isAdminEmail(email) ? 'admin' : 'user'
+  const token = signJwt({ email, uid, role })
+  return sendJson(res, 200, { ok: true, token, uid, email, role }, req)
+}
+
+// 设置 / 修改 / 重置密码：必须先用 6 位验证码确认邮箱所有权（复用 OTP 限流）
+// /set-password 与 /reset-password 共用（前端文案不同）
+async function handleSetPassword(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase()
+  const code = String(body.code || '').trim()
+  const password = String(body.password || '')
+  if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' }, req)
+  if (!/^\d{6}$/.test(code)) return sendJson(res, 400, { error: 'invalid_code' }, req)
+  if (!isValidPassword(password)) return sendJson(res, 400, { error: 'weak_password' }, req)
+
+  const r = await verifyOtpAndConsume(email, code)
+  if (!r.ok) return sendJson(res, r.status, { error: r.error }, req)
+
+  const hash = hashPassword(password)
+  const now = new Date().toISOString()
+  try {
+    const q = await rdb().from('user_passwords').select('email').eq('email', email).limit(1)
+    const exists = !!q && !q.error && (Array.isArray(q.data) ? q.data.length > 0 : !!q.data)
+    if (exists) {
+      const u = await rdb().from('user_passwords').update({ password_hash: hash, updated_at: now }).eq('email', email)
+      if (u && u.error) throw new Error(u.error.message || JSON.stringify(u.error))
+    } else {
+      const ins = await rdb().from('user_passwords').insert({ email, password_hash: hash, created_at: now, updated_at: now })
+      if (ins && ins.error) throw new Error(ins.error.message || JSON.stringify(ins.error))
+    }
+  } catch (e) {
+    console.error('[set-password] rdb error:', e)
+    return sendJson(res, 500, { error: 'db_error' }, req)
+  }
+  return sendJson(res, 200, { ok: true }, req)
 }
 
 // ============== SCF Event 入口（API 网关 SCF 类型路由）=============
@@ -341,6 +480,16 @@ exports.main = async (event, _context) => {
       return { statusCode: captured.status, headers: captured.headers, body: captured.body }
     }
 
+    if (method === 'POST' && subPath === '/login') {
+      await handleLogin(fakeReq, fakeRes, body)
+      return { statusCode: captured.status, headers: captured.headers, body: captured.body }
+    }
+
+    if (method === 'POST' && (subPath === '/set-password' || subPath === '/reset-password')) {
+      await handleSetPassword(fakeReq, fakeRes, body)
+      return { statusCode: captured.status, headers: captured.headers, body: captured.body }
+    }
+
     return reply(404, { error: 'not_found', path: rawPath, subPath, method })
   } catch (e) {
     console.error('[main] error:', e)
@@ -361,6 +510,10 @@ if (require.main === module) {
       const body = await readJsonBody(req)
       if (req.method === 'POST' && url.pathname === '/send') return await handleSend(req, res, body)
       if (req.method === 'POST' && url.pathname === '/verify') return await handleVerify(req, res, body)
+      if (req.method === 'POST' && url.pathname === '/login') return await handleLogin(req, res, body)
+      if (req.method === 'POST' && (url.pathname === '/set-password' || url.pathname === '/reset-password')) {
+        return await handleSetPassword(req, res, body)
+      }
       return sendJson(res, 404, { error: 'not_found' }, req)
     } catch (e) {
       console.error('[server] handler error:', e)
