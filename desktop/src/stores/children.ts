@@ -11,9 +11,9 @@
  *  - uid 来自自签 JWT（getActiveUid()）
  *  - RLS 已关闭（见 migration 20260813055506）
  *
- * 激活孩子同步到云端（v0.3 起）：
+ * 激活宝贝同步到云端（v0.3 起）：
  *  - 加载顺序：拉 children → 拉 user_prefs.active_child_id → 决策
- *  - 优先级：云端 user_prefs > 本地 localStorage > 第一个孩子
+ *  - 优先级：云端 user_prefs > 本地 localStorage > 第一个宝贝
  *  - 云端 active 在 children 列表里找不到时：fallback 第一个 + ElMessage 提示
  *  - 切换 setActive：本地立即生效 + 后台 upsert user_prefs（失败不阻塞）
  */
@@ -94,13 +94,13 @@ export const useChildrenStore = defineStore('children', () => {
   })
 
   /**
-   * 加载孩子 + 决策激活孩子
-   * 优先级：云端 user_prefs > 本地 localStorage > 第一个孩子
+   * 加载宝贝 + 决策激活宝贝
+   * 优先级：云端 user_prefs > 本地 localStorage > 第一个宝贝
    * 云端 ID 在列表里找不到 → fallback 第一个 + Toast 提示
    *
    * 如果 children 拉空但有 jwt 登录态 —— 大概率 uid 不匹配
-   * (用户可能换邮箱/换设备/本地缓存错乱)，这时不能静默让人"新建孩子"
-   * 而是弹明确提示让用户知道："你的账号下没有孩子数据"
+   * (用户可能换邮箱/换设备/本地缓存错乱)，这时不能静默让人"新建宝贝"
+   * 而是弹明确提示让用户知道："你的账号下没有宝贝数据"
    */
   async function load() {
     const uid = requireUid()
@@ -108,7 +108,7 @@ export const useChildrenStore = defineStore('children', () => {
     items.value = list
 
     if (list.length === 0) {
-      // 新账号/空账号：不弹警告，由首页直接展示"创建孩子"引导
+      // 新账号/空账号：不弹警告，由首页直接展示"创建宝贝"引导
       activeId.value = ''
       clearLS()
       loaded.value = true
@@ -140,7 +140,7 @@ export const useChildrenStore = defineStore('children', () => {
       const next = list.find((c) => c.id === resolved)
       ElMessage({
         type: 'info',
-        message: `之前激活的孩子已不存在，已自动切换到「${next?.name ?? '默认'}」`,
+        message: `之前激活的宝贝已不存在，已自动切换到「${next?.name ?? '默认'}」`,
         duration: 3000,
         showClose: true,
       })
@@ -154,7 +154,7 @@ export const useChildrenStore = defineStore('children', () => {
   }
 
   /**
-   * 切换激活孩子
+   * 切换激活宝贝
    * - 本地立即生效（UI 不等云端）
    * - 后台 best-effort 写 user_prefs；失败不阻塞但打 warning
    * - localStorage 双写一份（下次冷启动 + 离线下次兜底）
@@ -180,12 +180,12 @@ export const useChildrenStore = defineStore('children', () => {
     })
     items.value.push(c)
     if (items.value.length === 1) {
-      // 第一个孩子：本地 + 云端 prefs 都激活
+      // 第一个宝贝：本地 + 云端 prefs 都激活
       await setActive(c.id)
     } else {
       // 后续新增：不动当前激活（用户得手动切）
     }
-    ElMessage.success('已添加孩子档案')
+    ElMessage.success('已添加宝贝档案')
     return c
   }
 
@@ -198,7 +198,7 @@ export const useChildrenStore = defineStore('children', () => {
 
   async function remove(id: string) {
     if (items.value.length <= 1) {
-      throw new Error('至少需要保留一个孩子档案')
+      throw new Error('至少需要保留一个宝贝档案')
     }
     requireUid()
     await businessApi<{ deleted: number }>('DELETE', `/b/children/${encodeURIComponent(id)}`)
@@ -207,7 +207,7 @@ export const useChildrenStore = defineStore('children', () => {
       const next = items.value[0]!
       await setActive(next.id)
     }
-    ElMessage.success('已删除孩子档案')
+    ElMessage.success('已删除宝贝档案')
   }
 
   function getById(id: string): Child | undefined {

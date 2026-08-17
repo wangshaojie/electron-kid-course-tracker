@@ -90,7 +90,7 @@ async function onSubmit() {
 <template>
   <el-dialog
     :model-value="modelValue"
-    title="上课打卡"
+    title="上课记录"
     width="500"
     align-center
     :close-on-click-modal="false"
@@ -142,7 +142,7 @@ async function onSubmit() {
           v-model="form.feedback"
           type="textarea"
           :rows="3"
-          placeholder="孩子今天表现如何？"
+          placeholder="宝贝今天表现如何？"
           maxlength="200"
           show-word-limit
         />

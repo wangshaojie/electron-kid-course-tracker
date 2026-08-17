@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
- * 孩子切换器 —— 侧栏顶部的下拉
- *  显示当前孩子的头像 + 名字，点击展开下拉（切孩子 / 管理档案）
+ * 宝贝切换器 —— 侧栏顶部的下拉
+ *  显示当前宝贝的头像 + 名字，点击展开下拉（切宝贝 / 管理档案）
  */
 import { computed, ref, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
@@ -68,7 +68,7 @@ if (typeof window !== 'undefined') {
       <div class="min-w-0 flex-1">
         <p class="truncate font-bold text-ink">{{ current.name }}</p>
         <p class="text-xs text-ink-soft">
-          {{ children.count > 1 ? `${children.count} 个孩子 · 切换` : '点击管理' }}
+          {{ children.count > 1 ? `${children.count} 个宝贝 · 切换` : '点击管理' }}
         </p>
       </div>
       <span
@@ -95,7 +95,7 @@ if (typeof window !== 'undefined') {
           v-if="children.count > 1"
           class="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-ink-ghost"
         >
-          切换孩子
+          切换宝贝
         </p>
         <button
           v-for="c in children.items"
@@ -125,7 +125,7 @@ if (typeof window !== 'undefined') {
           @click="gotoSettings"
         >
           <span class="text-base">⚙️</span>
-          <span class="flex-1">管理孩子档案</span>
+          <span class="flex-1">管理宝贝档案</span>
           <span class="text-xs">→</span>
         </button>
       </div>

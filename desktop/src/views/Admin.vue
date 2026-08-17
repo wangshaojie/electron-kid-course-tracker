@@ -115,14 +115,14 @@ onMounted(load)
         <p class="mt-1 text-xs text-ink-ghost">在任一业务表出现过</p>
       </div>
       <div class="card-base">
-        <p class="text-xs text-ink-soft">已创建孩子的用户</p>
+        <p class="text-xs text-ink-soft">已创建宝贝的用户</p>
         <p class="mt-1 text-3xl font-extrabold text-moss-600">
           {{ stats?.usersWithChildren ?? '—' }}
         </p>
         <p class="mt-1 text-xs text-ink-ghost">覆盖率 {{ coveragePercent }}</p>
       </div>
       <div class="card-base">
-        <p class="text-xs text-ink-soft">总孩子 / 课程 / 打卡</p>
+        <p class="text-xs text-ink-soft">总宝贝 / 课程 / 打卡</p>
         <p class="mt-1 text-2xl font-extrabold text-ink">
           {{ stats?.totalChildren ?? '—' }} /
           {{ stats?.totalCourses ?? '—' }} /
@@ -159,7 +159,7 @@ onMounted(load)
             <span class="text-xs text-ink-soft">{{ formatTime(row.firstSeenAt) }}</span>
           </template>
         </el-table-column>
-        <el-table-column label="孩子" width="80" align="center">
+        <el-table-column label="宝贝" width="80" align="center">
           <template #default="{ row }">
             <el-tag :type="row.childCount > 0 ? 'success' : 'info'" effect="plain" round>
               {{ row.childCount }}

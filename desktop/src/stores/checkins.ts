@@ -59,7 +59,7 @@ export const useCheckinsStore = defineStore('checkins', () => {
     requireUid()
     const children = useChildrenStore()
     const cid = children.activeIdSafe
-    if (!cid) throw new Error('请先创建孩子档案')
+    if (!cid) throw new Error('请先创建宝贝档案')
 
     // 客户端预校验剩余课时（直接用 store 已聚合的 used_hours，避免重复查询）
     const courses = useCoursesStore()

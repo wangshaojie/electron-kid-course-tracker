@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 创建 / 编辑孩子档案弹窗
+ * 创建 / 编辑宝贝档案弹窗
  */
 import { ref, watch, computed } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -11,7 +11,7 @@ import { CHILD_EMOJI_POOL, CHILD_COLOR_POOL } from '@/data/childPool'
 const props = defineProps<{
   modelValue: boolean
   child?: Child | null
-  /** "next" 模式 = 创建后自动切到新孩子（首次启动用） */
+  /** "next" 模式 = 创建后自动切到新宝贝（首次启动用） */
   isFirstChild?: boolean
 }>()
 const emit = defineEmits<{
@@ -30,7 +30,7 @@ const form = ref({
 
 const rules = {
   name: [
-    { required: true, message: '请输入孩子的称呼', trigger: 'blur' },
+    { required: true, message: '请输入宝贝的称呼', trigger: 'blur' },
     { max: 12, message: '最多 12 个字', trigger: 'blur' },
   ],
 }
@@ -90,7 +90,7 @@ async function onSubmit() {
 <template>
   <el-dialog
     :model-value="modelValue"
-    :title="isEdit ? '编辑孩子档案' : (isFirstChild ? '欢迎！先建一个孩子档案' : '新增孩子档案')"
+    :title="isEdit ? '编辑宝贝档案' : (isFirstChild ? '欢迎！先建一个宝贝档案' : '新增宝贝档案')"
     width="500"
     align-center
     :close-on-click-modal="!isFirstChild"
@@ -110,7 +110,7 @@ async function onSubmit() {
       <el-form-item label="称呼" prop="name">
         <el-input
           v-model="form.name"
-          :placeholder="isFirstChild ? '比如：小宝 / 朵朵' : '孩子的称呼'"
+          :placeholder="isFirstChild ? '比如：小宝 / 朵朵' : '宝贝的称呼'"
           maxlength="12"
           show-word-limit
         />

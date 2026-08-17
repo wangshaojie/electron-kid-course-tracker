@@ -116,7 +116,7 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   async function signOut(): Promise<void> {
-    // 关闭残留的长驻 Toast（如"当前账号下没有找到孩子数据"），避免退出后还挂在屏幕上
+    // 关闭残留的长驻 Toast（如"当前账号下没有找到宝贝数据"），避免退出后还挂在屏幕上
     ElMessage.closeAll()
     token.value = null
     user.value = null

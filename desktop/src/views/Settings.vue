@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 设置
- *  - 孩子档案管理
+ *  - 宝贝档案管理
  *  - 导出 Excel
  *  - 清空指引（云端控制台）
  */
@@ -24,7 +24,7 @@ const children = useChildrenStore()
 const createOpen = ref(false)
 const editingChild = ref<Child | null>(null)
 
-// ---- 导出选项（孩子 / 科目多选 / 时间范围）----
+// ---- 导出选项（宝贝 / 科目多选 / 时间范围）----
 const exportOpen = ref(false)
 const exportLoading = ref(false)
 const exportExporting = ref(false)
@@ -74,7 +74,7 @@ async function openExportDialog() {
 }
 
 function onScopeChange() {
-  // 切换孩子时重置科目选择为该孩子下全部课程
+  // 切换宝贝时重置科目选择为该宝贝下全部课程
   exportCourseIds.value = scopedCourses.value.map((c) => c.id)
 }
 
@@ -102,17 +102,17 @@ async function onSetActive(c: Child) {
 
 async function onDelete(c: Child) {
   if (children.count <= 1) {
-    ElMessage.warning('至少需要保留一个孩子档案')
+    ElMessage.warning('至少需要保留一个宝贝档案')
     return
   }
   const ok = await dangerousConfirm({
-    title: '删除孩子档案',
+    title: '删除宝贝档案',
     message: `将删除「${c.name}」及其所有课程和打卡记录，此操作不可恢复。`,
     keyword: '删除',
     confirmText: '我已了解风险，删除',
   })
   if (!ok) return
-  // remove 内部会切到下一个孩子，这里等待其完成后再刷新业务数据
+  // remove 内部会切到下一个宝贝，这里等待其完成后再刷新业务数据
   await children.remove(c.id)
   await courses.refresh()
   await checkins.refresh()
@@ -127,14 +127,14 @@ async function onExportExcel() {
     if (!getActiveUid()) return
     exportExporting.value = true
 
-    // 按所选孩子过滤课程
+    // 按所选宝贝过滤课程
     const courseRows = allCourses.value.filter(
       (c) => exportScope.value === 'all' || c.child_id === exportScope.value,
     )
     const pickedIds = new Set(exportCourseIds.value)
     const pickedCourses = courseRows.filter((c) => pickedIds.has(c.id))
 
-    // 按所选孩子 + 科目 + 时间范围过滤打卡
+    // 按所选宝贝 + 科目 + 时间范围过滤打卡
     const [from, to] = exportDateRange.value ?? []
     const checkinRows = allCheckins.value.filter(
       (c) =>
@@ -146,7 +146,7 @@ async function onExportExcel() {
 
     const childLabel =
       exportScope.value === 'all'
-        ? `全部 ${children.count} 个孩子`
+        ? `全部 ${children.count} 个宝贝`
         : `「${children.getById(exportScope.value)?.name ?? ''}」`
     const rangeLabel =
       from && to ? `${from} ~ ${to}` : from ? `${from} 起` : to ? `截至 ${to}` : '全部时间'
@@ -181,27 +181,27 @@ function onWipe() {
   <div class="h-full overflow-y-auto bg-bg p-6">
     <header class="mb-5">
       <h1 class="text-2xl font-bold text-ink">设置</h1>
-      <p class="text-sm text-ink-soft">孩子管理 / 数据导出 / 备份</p>
+      <p class="text-sm text-ink-soft">宝贝管理 / 数据导出 / 备份</p>
     </header>
 
     <div class="space-y-4">
-      <!-- 孩子档案管理 -->
+      <!-- 宝贝档案管理 -->
       <div class="card-base">
         <div class="mb-3 flex items-center justify-between">
           <div>
-            <h3 class="font-bold text-ink">👶 孩子档案</h3>
+            <h3 class="font-bold text-ink">👶 宝贝档案</h3>
             <p class="mt-0.5 text-sm text-ink-soft">
               当前激活：<b class="text-moss-600">{{ children.active?.name }}</b>
               ，共 {{ children.count }} 个
             </p>
           </div>
           <el-button type="primary" @click="openCreate">
-            <span class="mr-1">+</span> 新增孩子
+            <span class="mr-1">+</span> 新增宝贝
           </el-button>
         </div>
 
         <div v-if="children.count === 0" class="py-6 text-center text-sm text-ink-soft">
-          <p>当前账号下没有孩子数据</p>
+          <p>当前账号下没有宝贝数据</p>
           <p class="mt-1 text-xs">你之前的录入可能用了别的邮箱，或数据还没拉过来</p>
         </div>
 
@@ -244,7 +244,7 @@ function onWipe() {
           </li>
         </ul>
         <p class="mt-3 text-xs text-ink-ghost">
-          删除孩子会同时删除其所有课程和打卡记录（ON DELETE CASCADE）
+          删除宝贝会同时删除其所有课程和打卡记录（ON DELETE CASCADE）
         </p>
       </div>
 
@@ -252,7 +252,7 @@ function onWipe() {
       <div class="card-base">
         <h3 class="mb-1 font-bold text-ink">📊 导出 Excel</h3>
         <p class="mb-3 text-sm text-ink-soft">
-          可选择孩子、勾选科目、限定上课时间范围；每门课程一个 sheet（课程信息 + 课时明细），外加汇总 sheet。
+          可选择宝贝、勾选科目、限定上课时间范围；每门课程一个 sheet（课程信息 + 课时明细），外加汇总 sheet。
         </p>
         <el-button type="primary" @click="openExportDialog">
           导出 Excel…
@@ -286,7 +286,7 @@ function onWipe() {
         <h3 class="mb-1 font-bold text-ink">ℹ️ 关于</h3>
         <dl class="grid grid-cols-2 gap-2 text-sm">
           <dt class="text-ink-soft">软件名称</dt><dd>一寸光阴</dd>
-          <dt class="text-ink-soft">版本</dt><dd>v0.2.0 · 多孩子支持</dd>
+          <dt class="text-ink-soft">版本</dt><dd>v0.2.0 · 多宝贝支持</dd>
           <dt class="text-ink-soft">技术栈</dt><dd>Electron + Vue 3 + CloudBase PG + Element Plus + ECharts</dd>
           <dt class="text-ink-soft">数据位置</dt>
           <dd>云端 CloudBase PostgreSQL（多设备同步）</dd>
@@ -302,7 +302,7 @@ function onWipe() {
       @saved="courses.refresh(); checkins.refresh()"
     />
 
-    <!-- 导出选项：孩子 / 科目多选 / 上课时间范围 -->
+    <!-- 导出选项：宝贝 / 科目多选 / 上课时间范围 -->
     <el-dialog
       v-model="exportOpen"
       title="导出 Excel"
@@ -317,9 +317,9 @@ function onWipe() {
       </div>
 
       <el-form v-else label-position="top" class="export-form">
-        <el-form-item label="孩子">
+        <el-form-item label="宝贝">
           <el-select v-model="exportScope" class="w-full" @change="onScopeChange">
-            <el-option label="全部孩子" value="all" />
+            <el-option label="全部宝贝" value="all" />
             <el-option v-for="c in children.items" :key="c.id" :label="c.name" :value="c.id" />
           </el-select>
         </el-form-item>

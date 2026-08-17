@@ -135,7 +135,7 @@ export const useCoursesStore = defineStore('courses', () => {
     requireUid()
     const children = useChildrenStore()
     const cid = children.activeIdSafe
-    if (!cid) throw new Error('请先创建孩子档案')
+    if (!cid) throw new Error('请先创建宝贝档案')
 
     const c = await businessApi<Course>('POST', '/b/courses', {
       child_id: cid,

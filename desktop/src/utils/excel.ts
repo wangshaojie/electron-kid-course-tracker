@@ -211,7 +211,7 @@ export async function exportToExcel(
 
   // 数据行
   const rows3: Array<[string, string]> = []
-  if (meta?.childLabel) rows3.push(['导出孩子', meta.childLabel])
+  if (meta?.childLabel) rows3.push(['导出宝贝', meta.childLabel])
   if (meta?.rangeLabel) rows3.push(['上课时间', meta.rangeLabel])
   rows3.push(['导出科目数', `${courses.length} 门`])
   rows3.push(['总投入金额', formatMoney(totalAmount)])

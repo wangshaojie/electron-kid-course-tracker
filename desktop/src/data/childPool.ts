@@ -1,17 +1,17 @@
 /**
- * data/childPool.ts —— 创建孩子时的 emoji / 主题色池
+ * data/childPool.ts —— 创建宝贝时的 emoji / 主题色池
  *
  * 从 schema.ts 拆出（schema.ts 含 sql.js 的 DDL 死代码，不应再被任何模块 import）。
  */
 
-/** 内置 emoji 池 —— 新建孩子时随机 / 选一个 */
+/** 内置 emoji 池 —— 新建宝贝时随机 / 选一个 */
 export const CHILD_EMOJI_POOL = [
   '🧒', '👧', '👦', '🧒🏻', '👧🏻', '👦🏻', '🧒🏼', '👧🏼', '👦🏼',
   '🧒🏽', '👧🏽', '👦🏽', '🧒🏾', '👧🏾', '👦🏾', '🧒🏿', '👧🏿', '👦🏿',
   '🐯', '🐰', '🐻', '🐶', '🦊', '🐼', '🐨', '🐸', '🐵', '🦁', '🐱', '🐭', '🐹',
 ] as const
 
-/** 主题色池（孩子头像底色） */
+/** 主题色池（宝贝头像底色） */
 export const CHILD_COLOR_POOL = [
   '#3FB87A', // 薄荷绿
   '#7AC7FF', // 天空蓝

@@ -1,7 +1,7 @@
 <script setup lang="ts">
 /**
  * 主布局：侧栏菜单 + 顶栏 + 内容区
- *  v2: 加孩子切换器 + 首次启动强制建第一个孩子
+ *  v2: 加宝贝切换器 + 首次启动强制建第一个宝贝
  *  v3: 加当前用户 + 登出
  */
 import { useRoute, useRouter } from 'vue-router'
@@ -30,7 +30,7 @@ interface MenuItem {
 const menus: MenuItem[] = [
   { path: '/', label: '首页总览', icon: '🏠' },
   { path: '/courses', label: '课程管理', icon: '📚' },
-  { path: '/checkins', label: '上课打卡', icon: '✅' },
+  { path: '/checkins', label: '上课记录', icon: '✅' },
   { path: '/stats', label: '统计分析', icon: '📈' },
   { path: '/settings', label: '设置', icon: '⚙️' },
 ]
@@ -96,14 +96,14 @@ watch(
         欢迎使用《一寸光阴》
       </h1>
       <p class="mb-8 text-base text-ink-soft">
-        先建一个孩子档案<br />可以为家里多个孩子分别记录
+        先建一个宝贝档案<br />可以为家里多个宝贝分别记录
       </p>
       <button
         type="button"
         class="btn-press rounded-full bg-moss-500 px-8 py-3 font-display text-lg font-bold text-white shadow-moss hover:bg-moss-600"
         @click="firstRunDialogOpen = true"
       >
-        ➕ 创建第一个孩子
+        ➕ 创建第一个宝贝
       </button>
     </div>
   </div>
@@ -129,7 +129,7 @@ watch(
         </div>
       </div>
 
-      <!-- 孩子切换器 -->
+      <!-- 宝贝切换器 -->
       <div class="px-3 pb-3">
         <ChildSwitcher />
       </div>
@@ -179,7 +179,7 @@ watch(
         >
           🚪 登出
         </button>
-        <p class="mt-1.5 text-[10px] text-ink-ghost">v0.2.0 · 多孩子支持</p>
+        <p class="mt-1.5 text-[10px] text-ink-ghost">v0.2.0 · 多宝贝支持</p>
         <p class="mt-0.5 truncate" :title="db.dbPath">{{ db.dbPath || '—' }}</p>
       </div>
     </aside>
