@@ -14,6 +14,8 @@ const props = defineProps<{
   modelValue: boolean
   /** 可选：预选某课程（首页"快速打卡"用） */
   preselectedCourseId?: string | null
+  /** 可选：预填上课日期（打卡日历页点某天用），默认今天 */
+  preselectedDate?: string | null
 }>()
 const emit = defineEmits<{
   'update:modelValue': [v: boolean]
@@ -43,7 +45,7 @@ watch(
     if (v) {
       form.value = {
         course_id: props.preselectedCourseId ?? courses.items[0]?.id ?? '',
-        date: todayStr(),
+        date: props.preselectedDate ?? todayStr(),
         hours: 1,
         feedback: '',
       }
