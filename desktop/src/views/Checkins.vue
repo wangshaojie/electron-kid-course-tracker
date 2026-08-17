@@ -1,7 +1,9 @@
 <script setup lang="ts">
 /**
- * 上课打卡 —— 日历视图
- * 左：月历（每天内嵌课程胶囊）；右：选中日打卡详情
+ * 上课记录 —— 日历 / 列表 双视图
+ * 日历：左月历（每天内嵌课程胶囊）+ 右选中日打卡详情
+ * 列表：打卡记录表（可按课程 / 时间筛选）
+ * 右上角按钮在两种视图间切换
  */
 import { computed, ref } from 'vue'
 import { useCheckinsStore } from '@/stores/checkins'
@@ -11,6 +13,7 @@ import { todayStr } from '@/utils/date'
 import { courseColorOf } from '@/utils/courseColor'
 import { confirm } from '@/utils/confirm'
 import CheckinCalendar from '@/components/checkin/CheckinCalendar.vue'
+import CheckinTable from '@/components/checkin/CheckinTable.vue'
 import CheckinFormDialog from '@/components/checkin/CheckinFormDialog.vue'
 
 const checkins = useCheckinsStore()
@@ -24,6 +27,13 @@ const selectedDate = ref(todayStr())
 
 const checkinDialogOpen = ref(false)
 const dialogDate = ref(todayStr())
+
+/** 展示模式：calendar 日历 / list 列表 */
+const viewMode = ref<'calendar' | 'list'>('calendar')
+const isCalendar = computed(() => viewMode.value === 'calendar')
+function toggleView() {
+  viewMode.value = viewMode.value === 'calendar' ? 'list' : 'calendar'
+}
 
 const monthPrefix = computed(() => `${year.value}-${String(month.value).padStart(2, '0')}`)
 
@@ -82,14 +92,14 @@ async function removeCheckin(id: string) {
 
 <template>
   <div class="flex h-full flex-col gap-4 bg-bg p-6">
-    <!-- 没孩子：引导去设置页创建 -->
+    <!-- 没宝贝：引导去设置页创建 -->
     <div
       v-if="children.loaded && children.count === 0"
       class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center text-center"
     >
       <div class="mb-4 text-6xl">🌱</div>
-      <h2 class="mb-2 text-xl font-bold text-ink">还没有孩子档案</h2>
-      <p class="mb-6 text-sm text-ink-soft">先去「设置」创建一个孩子，再回来记录上课打卡吧。</p>
+      <h2 class="mb-2 text-xl font-bold text-ink">还没有宝贝档案</h2>
+      <p class="mb-6 text-sm text-ink-soft">先去「设置」创建一个宝贝，再回来记录上课情况吧。</p>
     </div>
 
     <template v-else>
@@ -97,16 +107,23 @@ async function removeCheckin(id: string) {
         <div>
           <h1 class="flex items-center gap-2 text-2xl font-bold text-ink">
             <span>{{ children.active?.emoji ?? '🗓' }}</span>
-            <span>{{ children.active?.name ?? '' }}的打卡日历</span>
+            <span v-if="isCalendar">{{ children.active?.name ?? '' }}的打卡日历</span>
+            <span v-else>{{ children.active?.name ?? '' }}的打卡记录</span>
           </h1>
-          <p class="mt-1 text-sm text-ink-soft">
+          <p v-if="isCalendar" class="mt-1 text-sm text-ink-soft">
             本月打卡 {{ monthCount }} 次 · 共 {{ monthHours }} 节，点击日期查看当天详情
           </p>
+          <p v-else class="mt-1 text-sm text-ink-soft">
+            共 {{ checkins.items.length }} 条记录，可按课程和时间筛选
+          </p>
         </div>
-        <el-button type="primary" @click="openCheckin(todayStr())">＋ 打卡</el-button>
+        <el-button type="primary" plain @click="toggleView">
+          {{ isCalendar ? '📋 列表' : '📅 日历' }}
+        </el-button>
       </header>
 
-      <div class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4">
+      <!-- 日历视图 -->
+      <div v-if="isCalendar" class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4">
         <!-- 左：月历 -->
         <div class="card-base flex min-h-0 flex-col p-4">
           <div class="mb-3 flex items-center justify-between">
@@ -134,6 +151,7 @@ async function removeCheckin(id: string) {
 
         <!-- 右：选中日详情 -->
         <div class="card-base flex min-h-0 flex-col p-4">
+
           <div class="mb-3 flex items-center justify-between">
             <div>
               <h3 class="font-bold text-ink">{{ dayLabel }} · {{ weekdayText }}</h3>
@@ -187,6 +205,11 @@ async function removeCheckin(id: string) {
             </ul>
           </div>
         </div>
+      </div>
+
+      <!-- 列表视图 -->
+      <div v-else class="card-base min-h-0 flex-1 overflow-y-auto p-4">
+        <CheckinTable />
       </div>
     </template>
 
