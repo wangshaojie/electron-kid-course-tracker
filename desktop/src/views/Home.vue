@@ -7,10 +7,10 @@ import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useChildrenStore } from '@/stores/children'
 import { useAuthStore } from '@/stores/auth'
+import type { CourseSummary } from '@/types'
 import { formatMoney } from '@/utils/money'
 import { todayStr } from '@/utils/date'
 import StatCard from '@/components/common/StatCard.vue'
-import AlertBanner from '@/components/common/AlertBanner.vue'
 import CheckinFormDialog from '@/components/checkin/CheckinFormDialog.vue'
 import { useRouter } from 'vue-router'
 
@@ -30,11 +30,24 @@ const todayCheckinCount = computed(() => {
 
 const recentCheckins = computed(() => checkins.items.slice(0, 5))
 
-const lowSummary = computed(() =>
-  courses.summaries.filter((s) => s.status === 'low' || s.status === 'expired'),
+/** 进行中的课程按剩余课时升序（快用完的排前面），已完结的不展示 */
+const courseRows = computed(() =>
+  [...courses.summaries]
+    .filter((s) => s.status !== 'done')
+    .sort((a, b) => a.remain_hours - b.remain_hours),
 )
 
-/** 没有孩子数据时的明确引导 —— 不让人误以为"必须新建" */
+function usedPct(s: CourseSummary): number {
+  return s.total_hours > 0 ? Math.min(100, Math.round((s.used_hours / s.total_hours) * 100)) : 0
+}
+
+function barColor(s: CourseSummary): string {
+  if (s.status === 'expired') return '#E5484D'
+  if (s.status === 'low') return '#E08A1E'
+  return '#3FB87A'
+}
+
+/** 没有宝贝数据时的明确引导 —— 不让人误以为"必须新建" */
 const noChildHint = computed(() => ({
   email: auth.user?.email ?? '',
 }))
@@ -60,7 +73,7 @@ async function signOut() {
 
 <template>
   <div class="h-full overflow-y-auto bg-bg p-6">
-    <!-- 没孩子：直接展示"创建孩子"引导（不再弹警告 Toast） -->
+    <!-- 没宝贝：直接展示"创建宝贝"引导（不再弹警告 Toast） -->
     <div
       v-if="children.loaded && children.count === 0"
       class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center text-center"
@@ -68,10 +81,10 @@ async function signOut() {
       <div class="mb-4 text-6xl">🌱</div>
       <h2 class="mb-2 text-xl font-bold text-ink">欢迎，{{ noChildHint.email }}</h2>
       <p class="mb-6 text-sm text-ink-soft">
-        你的账号下还没有孩子，先创建一个孩子档案，就可以开始记录课程和打卡啦。
+        你的账号下还没有宝贝，先创建一个宝贝档案，就可以开始记录课程和打卡啦。
       </p>
       <div class="flex gap-2">
-        <el-button type="primary" size="large" @click="gotoSettings">＋ 创建孩子</el-button>
+        <el-button type="primary" size="large" @click="gotoSettings">＋ 创建宝贝</el-button>
         <el-button size="large" @click="signOut">退出登录</el-button>
       </div>
     </div>
@@ -82,11 +95,8 @@ async function signOut() {
         <span>{{ children.active?.emoji ?? '🌱' }}</span>
         <span>{{ children.active?.name ?? '小探险家' }}的成长</span>
       </h1>
-      <p class="text-sm text-ink-soft">看一眼关键数字 + 预警</p>
+      <p class="text-sm text-ink-soft">看一眼关键数字 + 课时消耗</p>
     </header>
-
-    <!-- 预警 -->
-    <AlertBanner :alerts="courses.alerts" class="mb-5" />
 
     <!-- 汇总卡片 -->
     <div class="mb-6 grid grid-cols-4 gap-4">
@@ -129,7 +139,7 @@ async function signOut() {
             class="btn-press w-full rounded-lg bg-brand-400 px-3 py-2.5 text-left text-sm font-medium text-white shadow-soft hover:bg-brand-500"
             @click="checkinDialogOpen = true"
           >
-            🎯 快速上课打卡
+            🎯 快速上课记录
           </button>
           <button
             class="btn-press w-full rounded-lg bg-white px-3 py-2.5 text-left text-sm font-medium text-ink ring-1 ring-brand-100 hover:bg-brand-50"
@@ -146,12 +156,12 @@ async function signOut() {
         </div>
       </div>
 
-      <!-- 课时预警 -->
+      <!-- 课时消耗进度（仅展示进行中的课程，已完结不占位） -->
       <div class="card-base col-span-2">
         <div class="mb-3 flex items-center justify-between">
-          <h3 class="font-bold text-ink">⚠️ 课时预警</h3>
+          <h3 class="font-bold text-ink">⏳ 课时消耗</h3>
           <button
-            v-if="lowSummary.length > 0"
+            v-if="courseRows.length > 0"
             type="button"
             class="text-xs text-brand-500 hover:underline"
             @click="router.push('/courses')"
@@ -159,35 +169,43 @@ async function signOut() {
             全部 →
           </button>
         </div>
-        <div v-if="lowSummary.length === 0" class="rounded-lg bg-brand-50/50 py-6 text-center text-sm text-ink-soft">
-          一切正常 🌱
+        <div v-if="courseRows.length === 0" class="rounded-lg bg-brand-50/50 py-6 text-center text-sm text-ink-soft">
+          暂无进行中的课程 🌱
         </div>
-        <div v-else class="space-y-2">
-          <div
-            v-for="s in lowSummary.slice(0, 5)"
-            :key="s.id"
-            class="flex items-center justify-between rounded-lg bg-cream-50 px-3 py-2.5"
-          >
-            <div>
-              <p class="text-sm font-medium text-ink">{{ s.name }}</p>
-              <p class="text-xs text-ink-soft">
-                剩 {{ s.remain_hours }} 节
-                <span v-if="s.expires_at" class="ml-2">
-                  · 到期 {{ s.expires_at }}
-                  <span v-if="s.days_to_expire !== null && s.days_to_expire >= 0">
-                    ({{ s.days_to_expire }} 天)
-                  </span>
-                  <span v-else-if="s.days_to_expire !== null && s.days_to_expire < 0" class="text-danger">
-                    (已过期 {{ -s.days_to_expire }} 天)
-                  </span>
+        <ul v-else class="space-y-3.5">
+          <li v-for="s in courseRows.slice(0, 5)" :key="s.id">
+            <div class="flex items-center justify-between gap-2">
+              <span class="min-w-0 truncate text-sm font-medium text-ink">{{ s.name }}</span>
+              <div class="flex shrink-0 items-center gap-2">
+                <span class="text-xs text-ink-ghost">
+                  剩
+                  <b :class="s.remain_hours <= 3 ? 'text-sun-500' : 'text-brand-500'">
+                    {{ s.remain_hours }}
+                  </b>
+                  节
                 </span>
-              </p>
+                <el-button size="small" type="primary" plain @click="quickCheckin(s.id)">
+                  打卡
+                </el-button>
+              </div>
             </div>
-            <el-button size="small" type="primary" plain @click="quickCheckin(s.id)">
-              打卡
-            </el-button>
-          </div>
-        </div>
+            <div class="mt-1.5 h-2 overflow-hidden rounded-full bg-brand-50">
+              <div
+                class="h-full rounded-full transition-all duration-300"
+                :style="{ width: `${usedPct(s)}%`, backgroundColor: barColor(s) }"
+              />
+            </div>
+            <div v-if="s.expires_at" class="mt-1 text-xs text-ink-ghost">
+              到期 {{ s.expires_at }}
+              <span v-if="s.days_to_expire !== null && s.days_to_expire < 0" class="text-danger">
+                （已过期 {{ -s.days_to_expire }} 天）
+              </span>
+              <span v-else-if="s.days_to_expire !== null">
+                （{{ s.days_to_expire }} 天）
+              </span>
+            </div>
+          </li>
+        </ul>
       </div>
     </div>
 
