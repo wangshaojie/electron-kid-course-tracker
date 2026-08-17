@@ -108,6 +108,7 @@ src/
 7. release 产物用时间戳 output 目录（`release/<ts>`）；旧 `release.bak.*` / 历史 .log 可清理（2026-08 已清理过）
 8. **pnpm onlyBuiltDependencies** 让 pnpm 10 跑 electron/esbuild postinstall
 9. **Electron 二进制** 走 npmmirror：`$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'`
+10. **卸载可选清除本地数据** 实现在 `build/installer.nsh`：卸载欢迎页复选框（默认不勾），勾选才删 `%APPDATA%\course-tracker`（详见 `../AGENTS.md` §8）；改此文件必须保持 UTF-8 BOM
 
 ## 9. 验收清单
 

@@ -29,7 +29,21 @@
 │  ├─ auth-otp (HTTP Function, 本地调试 :9000)           │
 │  │    POST /send    发 6 位验证码邮件（Resend）         │
 │  │    POST /verify  校验码 + 签自签 JWT（30 天有效）    │
+│  │    POST /login   邮箱+密码登录（可选，scrypt 比对） │
+│  │    POST /set-password  验证码确认后 设置/修改密码    │
+│  │    POST /reset-password 忘记密码重置（同 set）       │
+│  │                  JWT payload 含 role（admin/user）  │
 │  │    GET  /health  健康检查                            │
+│  ├─ data-api (HTTP Function, 本地调试 :9000)            │
+│  │    GET  /admin/stats   管理员统计（4 数字）         │
+│  │    GET  /admin/users   注册用户表（最多 500）        │
+│  │    GET  /health       健康检查                        │
+│  │    GET/POST/PATCH/DELETE /b/:table  业务 CRUD        │
+│  │      （children/courses/checkins/user_prefs）        │
+│  │    ★ 业务安全：owner_id 服务端从 JWT 强制注入，      │
+│  │      表名/写入列/过滤列/排序列全白名单               │
+│  │    ★ ADMIN_EMAILS 白名单（不信任 JWT 里的 role，     │
+│  │      每次请求现查 env，admin 增删立即生效）          │
 │  ├─ uid = sha256(email).slice(0, 32)  ← 跨设备稳定     │
 │  └─ pg-backup (Event 定时触发)  每日 PG 备份            │
 └────────────────────────────────────────────────────────┘
@@ -43,15 +57,16 @@
 │  ├─ email_otps  OTP 临时存储（hash + salt + attempts）  │
 │  └─ user_prefs  owner_id PK + active_child_id          │
 │                                                       │
-│  ⚠️  RLS 当前关闭（migration 20260813055506）           │
-│     业务侧用 .eq('owner_id', uid) 显式过滤              │
+│  ✅ RLS 已开启 + anon policy/权限已删（20260817000000）│
+│     anon 直连 PostgREST：无 policy + 无权限 → 全拒     │
 └────────────────────────────────────────────────────────┘
-                       │ PostgREST (anon key)
+                       │ service role (BYPASSRLS)
                        ▲
-       渲染端 SDK db.from('children').eq('owner_id', uid)
+       渲染端 fetch data-api /b/* 带 Authorization: Bearer <自签JWT>
+       渲染端 fetch data-api /admin/* 带 Authorization: Bearer <自签JWT>
 ```
 
-**数据隔离**：靠前端注入 `owner_id` 过滤（因为 RLS 关了）。**生产前必须**重新开 RLS（详见第 9 节 TODO）。
+**数据隔离**：业务读写**全部走 data-api 云函数**，`owner_id` 由服务端从 JWT 注入（前端传的一律忽略）；数据库层 RLS 已开 + anon policy/权限已删，即使拆包拿到 publishable key 直连 PostgREST 也被拒。
 
 ### 2.2 端到端流程（mermaid）
 
@@ -151,8 +166,8 @@ flowchart LR
     end
 
     UI -->|点击 + 读 store| Store
-    Store -->|getActiveUid()<br/>db.from().eq('owner_id')| Lib
-    Lib -->|PostgREST| PG
+    Store -->|businessApi()<br/>GET/POST/PATCH/DELETE /b/*| Lib
+    Lib -->|fetch data-api<br/>service role 直连| PG
 
     UI -.sendCode.-> Otp
     Otp -->|写 email_otps| PG
@@ -164,8 +179,8 @@ flowchart LR
 ```
 
 **关键边界**：
-- 渲染端**只走** PostgREST（`@cloudbase/js-sdk` 的 `app.rdb`），**不**直接调 cloud function
-- 业务读写权限 = anon publishable key + RLS disable + 前端 .eq('owner_id', uid) 三件套
+- 渲染端**只走** data-api 云函数（`businessApi` → `/b/*`），**不**直连 PostgREST、**不**用数据库 key
+- 业务读写权限 = 服务端 JWT（owner_id 强制注入）+ RLS 开启 + anon 无 policy/权限 三件套
 - `auth-otp` 是 **HTTP Function**，`pg-backup` 是 **Event Function（定时触发）**，都通过 service role 凭据直连 PG
 
 ## 3. 目录速览
@@ -185,7 +200,9 @@ kid-course-tracker/
 │   │   ├── 20260813222000_user_prefs.sql
 │   │   ├── 20260814100000_backups.sql
 │   │   ├── 20260814120000_user_prefs_anon.sql
-│   │   └── 20260814130000_backups_anon.sql
+│   │   ├── 20260814130000_backups_anon.sql
+│   │   ├── 20260817000000_business_anon_harden.sql ← 删 anon policy + revoke
+│   │   └── 20260817000001_user_passwords.sql ← 可选密码登录（scrypt 哈希）
 │   └── functions/           ← 云函数
 │       ├── auth-otp/        ← HTTP 云函数（发码/验码/签 JWT）
 │       └── pg-backup/       ← Event 云函数（每日 PG 备份）
@@ -196,6 +213,7 @@ kid-course-tracker/
 │   ├── package.json
 │   ├── vite.config.ts       ← Vite + @ 别名
 │   ├── tsconfig*.json
+│   ├── build/installer.nsh  ← NSIS 卸载"清除本地数据"复选框脚本
 │   ├── electron/            ← 主进程 + preload
 │   │   ├── main.ts
 │   │   ├── updater.ts       ← 版本检查（GitHub 双通道）
@@ -221,6 +239,7 @@ kid-course-tracker/
 
 ### 4.1 鉴权流程
 
+验证码登录（默认）：
 1. 用户在 `Login.vue` 输邮箱 → `auth.sendCode()` → 调云函数 `/send` → 邮件发 6 位码
 2. 输码 → `auth.verifyCode()` → 调云函数 `/verify` → 拿到 `{ token, uid, email }`
 3. `persistSession(token, user, remember)`：
@@ -228,12 +247,20 @@ kid-course-tracker/
    - `remember=false` → sessionStorage（关 tab 即失效）
 4. `auth.bootstrap()` 在 `main.ts` 启动时从 storage 恢复
 
+密码登录（可选，与验证码并存，v0.3+）：
+- `Login.vue` 双 Tab（验证码 / 密码）；密码登录走 `/login`，成功签**与 `/verify` 完全相同的 JWT**，data-api / 管理员白名单 / owner_id 逻辑零改动
+- **首次设置密码**：登录页密码 Tab → "设置 / 修改密码"折叠区 → 验证码确认邮箱所有权 → `/set-password` 写 scrypt 哈希（`crypto.scryptSync` 零新依赖，格式 `scrypt$N$r$p$salt$hash` 参数内嵌可升级）
+- 忘记密码走 `/reset-password`（后端与 set-password 同逻辑）
+- **安全设计**：密码 ≥ 8 位含字母数字（前端 + 服务端双重校验）；登录失败统一返回 `invalid_credentials`（防邮箱枚举）；按 email 连续失败 5 次锁 15 分钟（内存 Map，冷启动重置可接受）；未设密码的邮箱 `/login` 也返回同一句错误
+- 不设密码的用户照常用验证码登录，互不影响
+
 ### 4.2 业务数据流
 
 - **所有业务表 owner_id 必须是 self uid**（不允许跨账号读写）
-- 渲染端 store 直接走 `db.from(table).eq('owner_id', uid)`，**不做二次过滤**（RLS 是兜底，当前已关）
+- 渲染端 store **全部走 data-api**：`businessApi('GET/POST/PATCH/DELETE', '/b/:table')`，`owner_id` 由云函数从 JWT 强制注入，前端传的 `owner_id` 被忽略
+- 数据库层 RLS 已开启 + anon policy/权限已删（migration 20260817000000），anon 直连 PostgREST 一律被拒；data-api 用 service role（BYPASSRLS）不受影响
 - 课时扣减：客户端预校验（used + hours > total 报错） + 数据库 CHECK
-- 激活孩子同步：见 `stores/children.ts` → `user_prefs` 表
+- 激活孩子同步：见 `stores/children.ts` → `data-api /b/user_prefs`（PATCH 无 id = upsert）
 
 ### 4.3 切换账号不残留（重要！）
 
@@ -258,6 +285,40 @@ App.vue 有三件套：
 - 卡片圆角 12px / 按钮 8px
 - 关键操作（删除/清空/认领）必须 `dangerousConfirm`（输入关键字二次确认）
 - Toast 限一个长驻（用 `duration: 0, showClose: true`）
+
+### 4.6 管理员模块（v0.3+）
+
+**入口**：侧栏底部"🛡 管理员后台"按钮（仅 `auth.user?.role === 'admin'` 时渲染），路由 `/admin`（`meta.requiresAdmin`）。
+
+**三层鉴权**（缺一不可）：
+
+1. **路由守卫**（`router/index.ts`）—— 已登录但非 admin 访问 `/admin` 直接跳 `/`
+2. **auth-otp 签 JWT** —— `verify` 成功时若 `email ∈ ADMIN_EMAILS` 则 `payload.role = 'admin'`，否则 `'user'`
+3. **data-api 双校验**（cloud function 端）——
+   - 验 `Authorization: Bearer <jwt>` 签名有效性
+   - **不信任 JWT 里的 role**，每次现读 `ADMIN_EMAILS` env 重新比对（白名单增删立即生效，**不需等 30 天 JWT 过期**）
+
+**关键设计取舍**：
+
+- **不新建 admins 表** —— 走 env 白名单，零 schema 改动
+- **不依赖 JWT 里的 role** —— 30 天过期内 admin 被撤，data-api 仍能立即拒绝
+- **不动业务表 RLS / schema** —— 基础 3 项统计用 SQL 聚合 owner_id 跨 4 表 union 去重就够
+- **email 反查** —— `owner_id` = `sha256(email).slice(0,32)`，从 `email_otps` 表里反查真正登录过的邮箱；查不到时显示 uid 截断
+- **历史脏数据兜底** —— 存量 owner_id 曾被 JSON 序列化包裹双引号；已于 2026-08-17 全表清洗（`btrim(owner_id, '"')`），data-api 对 owner_id 仍保留 trim 兼容
+
+**新增/修改文件**：
+
+| 路径 | 改动 |
+|---|---|
+| `cloudbase/functions/auth-otp/index.js` | 读 `ADMIN_EMAILS`，verify 时给 JWT `role` 字段 |
+| `cloudbase/functions/data-api/{index.js,package.json,scf_bootstrap}` | 新建：HTTP Function，3 个路由（health/stats/users） |
+| `cloudbaserc.json` | `auth-otp` env 加 `ADMIN_EMAILS`，`data-api` 函数定义 |
+| `desktop/src/views/Admin.vue` | 新建：4 卡片 + 注册用户表 |
+| `desktop/src/router/index.ts` | 加 `/admin` 路由 + `requiresAdmin` 守卫 |
+| `desktop/src/stores/auth.ts` | verify 时存 `user.role` |
+| `desktop/src/lib/cloudbase.ts` | `SessionUser` 加 `role`，新增 `dataApiGet()` 工具 |
+| `desktop/src/components/common/AppLayout.vue` | 侧栏底部"🛡 管理员后台"按钮（v-if） |
+| `desktop/.env.{development,production,example}` | 加 `VITE_DATA_API_URL` |
 
 ## 5. 开发命令
 
@@ -296,6 +357,7 @@ pnpm exec electron dist-electron/main.mjs --open-devtools
 | `checkins` | 打卡（hours/feedback） |
 | `email_otps` | OTP 临时记录（hash + salt + attempts + ip） |
 | `user_prefs` | 账号偏好（owner_id PK + active_child_id） |
+| `user_passwords` | 可选密码登录（email PK + scrypt 哈希） |
 
 ### 6.2 字段约定
 
@@ -307,10 +369,19 @@ pnpm exec electron dist-electron/main.mjs --open-devtools
 
 文件名格式 `YYYYMMDDHHMMSS_xxx.sql`，数字前缀保证按时间顺序跑。
 ```bash
-# 跑全部 migration
+# 跑全部 migration（bash 下 OK）
 tcb db execute -e <envId> --sql "$(cat cloudbase/migrations/xxx.sql)"
 # 或分多条跑（DDL 一条一条更稳）
 ```
+
+⚠️ **Windows PowerShell 下 `--sql "$(cat file)"` 不可靠**（已踩坑，2026-08-17）：
+- 多行 SQL 可能被拆坏、含 `$` 的 SQL（如 `scrypt$16384$...` 哈希）会被 PowerShell 当变量插值截断
+- 现象：命令"成功"返回 0 行受影响，但表实际没建出来 / 数据被写坏（存成 `scrypt`）
+- 正确姿势：
+  ```powershell
+  tcb db execute -e <envId> --sql "$(Get-Content -Raw -Encoding UTF8 cloudbase/migrations/xxx.sql)"
+  # 或把 --sql 内联成单条语句执行
+  ```
 
 ## 7. 部署
 
@@ -323,16 +394,35 @@ tcb fn deploy auth-otp -e <envId>
 tcb fn deploy --config-file cloudbaserc.json
 ```
 
+⚠️ 部署 HTTP Function 改完代码后建议**强制重传**（cos 可能缓存）：
+```bash
+tcb fn deploy auth-otp -e <envId> --force --deployMode zip
+tcb fn deploy data-api -e <envId> --force --deployMode zip
+```
+
 ### 7.2 路由
 
-云函数 `auth-otp` 暴露 HTTP，必须加 `WEB_SCF` 类型路由（不是默认的 `SCF`）：
+云函数 `auth-otp` / `data-api` 暴露 HTTP，必须加 `WEB_SCF` 类型路由（不是默认的 `SCF`）：
 ```bash
 tcb routes add -d '{"routes":[{"path":"/auth-otp","upstreamResourceType":"WEB_SCF","upstreamResourceName":"auth-otp","method":["GET","POST"]}]}'
+tcb routes add -d '{"routes":[{"path":"/data-api","upstreamResourceType":"WEB_SCF","upstreamResourceName":"data-api","method":["GET","POST"]}]}'
 ```
 
 ### 7.3 数据库
 
-migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本会改 schema 风险大）。
+migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本会改 schema 风险大）。⚠️ 在 PowerShell 下务必用 `Get-Content -Raw -Encoding UTF8` 传参（见 §6.3），跑完用 `SELECT` 验证表真实存在（`tcb db execute` 返回 0 行不代表建表失败）。
+
+### 7.4 管理员白名单（必做）
+
+第一次部署 data-api 时，**必须**给 `auth-otp` env 注入 `ADMIN_EMAILS`（逗号分隔小写邮箱），否则所有用户都拿不到 admin role：
+```bash
+tcb fn config update fn auth-otp -e <envId> \
+  -e ADMIN_EMAILS=admin@240730.xyz
+```
+
+cloudbaserc.json 也可写 `"ADMIN_EMAILS": "admin@240730.xyz"`，但因 cloudbaserc.json 整体被 `.gitignore` 包含（防密钥泄露），不推荐把白名单写在仓库里，**走 `tcb fn config update` 控制台注入更稳**。
+
+**撤销管理员**只需重新跑一次 `tcb fn config update` 把邮箱从白名单去掉；下次请求起效（JWT role 字段会被忽略，data-api 现查 env 拒绝）。
 
 ## 8. 已知坑（必看）
 
@@ -342,6 +432,14 @@ migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本
   ```
   详见 agent memory。
 
+- **NSIS 卸载"清除本地数据"复选框（`desktop/build/installer.nsh`）** —— electron-builder 自动加载 buildResources 目录下默认的 `installer.nsh`（**无需**在 package.json 配 `nsis.include`），用官方两个钩子实现"卸载时可选清除本地数据"：
+  - `customUnWelcomePage`：替换默认卸载欢迎页，加复选框"同时删除本地数据（登录信息、缓存等）"，**默认不勾选**；点取消 = 放弃卸载
+  - `customUnInstall`：卸载流程末尾，勾选时 `RMDir /r` 删 `%APPDATA%\course-tracker` 和 `%APPDATA%\一寸光阴`（双目录保险，实测是前者）
+  - **静默卸载 `/S` 自动跳过该页面，不会删数据**
+  - 业务数据（孩子/课程/打卡）全在云端 PG，删本地只丢登录态，重装需重新验证码登录，**不丢任何业务数据**
+  - ⚠️ 改此文件**必须保持 UTF-8 BOM**（NSIS 解析中文必需），补 BOM：`node -e "const fs=require('fs');const p='build/installer.nsh';let b=fs.readFileSync(p);if(!(b[0]===0xEF&&b[1]===0xBB&&b[2]===0xBF)){b=Buffer.concat([Buffer.from([0xEF,0xBB,0xBF]),b]);fs.writeFileSync(p,b)}"`；改完用 `pnpm exec electron-builder --win nsis --x64 --config.directories.output=release/test-nsis` 验证编译
+  - 两个钩子会被模板 `!ifmacrodef` 检测并展开；怀疑失效时可在宏体内临时加 `!warning "MARKER"` 二分验证（`!warning` 会触发 warning-as-error，**验证完必须移除**）
+
 - **Vite + Vue Router + 异步 auth bootstrap** —— `router.isReady()` 只 await 第一次 beforeEach。如果 `auth.status === 'bootstrapping'` 时守卫放行，isReady 立刻 resolve，之后 bootstrap 改 status 没人再触发 redirect。`main.ts` 必须在 `await router.isReady()` 后主动 `router.replace` 纠偏。
 
 - **CloudBase SCF 环境变量前缀** —— `tcb config update fn` 拒绝 `SCF_/QCLOUD_/TENCENTCLOUD_` 前缀。改用普通前缀（如 `TCB_SDK_SECRET_ID`）再在函数代码里读。
@@ -350,7 +448,9 @@ migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本
 
 - **CloudBase cloudbaserc.json type 字段大写** —— `"type": "HTTP"` 不是 `"http"`。
 
-- **CloudBase RLS 对 service role 不自动 bypass** —— secretId/secretKey 走 PostgREST 时默认 anon/authenticated 角色。RLS 启用时必须给 anon/authenticated 加 policy，或 disable RLS。
+- **CloudBase RLS / service role 实测** —— 本项目 PG 角色 `service_role`（含 `cloudbase_postgres_pgdb_*` / `cloudbase_read_only_user_pgdb_*`）`rolbypassrls=true`（BYPASSRLS），云函数用 service key 直连**不受 RLS 限制**。所以收紧策略 = 删 anon policy + revoke anon 权限即可，无需给 service role 配 policy。
+
+- **CloudBase SCF WEB_SCF + scf_bootstrap 模式下必须保留 `require.main === module` 段** —— SCF 启动 `node index.js` 后模块顶层会执行（`require.main === module` 在 SCF 也成立），SCF 把容器内 9000 端口当 fastcgi 端口接 HTTP 请求，**必须**有 `http.createServer.listen(9000)`。**不要按老 SCF Event 模式删这段 + 改用 `exports.main`**——`exports.main` 在 v3.7.3 这套环境不被调，删了之后远端返 443/404。修法：在 http.createServer 内按 `new URL(req.url).pathname` 分发到 handleXxx 函数，exports.main 保留但返个 `event_mode_not_supported` 备用。
 
 - **GitHub 匿名 API 限流（版本检查）** —— `electron/updater.ts` 别用 Electron `net.request`（走 Chromium 网络栈/系统代理，出口 IP 易被 GitHub API 403 限流）；用 Node 原生 `https` 直连。且 API 失败会自动降级到 `releases/latest` 的 302 Location 解析版本号（网页请求不受 API 限流）。改这块时保持双通道。
 
@@ -363,11 +463,15 @@ migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本
 3. 🟡 **OTP /verify 改用 attempts 全局计数**（当前每条码独立 5 次，可绕过）
 4. 🟡 **NSIS 代码签名**（避免 SmartScreen 警告）
 5. 🟢 **写每日 PG 备份 cron**（用 `tcb fn deploy` + 定时触发）
+6. 🟡 **管理员白名单审计** —— `ADMIN_EMAILS` 走 env 注入（已通过 `tcb fn config update` 而不是 cloudbaserc.json 提交），但每季度人工审计一次；admin 离职/换岗时**立即**从白名单去掉
+7. 🟡 **data-api 限流** —— 当前 `/admin/*` 无 rate limit，单个 admin 误操作可把全表 owner_id 拉一遍（用户量 < 1000 时无害，但用户上量后建议加 per-IP 限流 + 加 `?limit=100&offset=N` 分页）
 
 ## 10. agent 协作约定
 
 - **改 store / 写新表 / 改 migration** → 改完跑 `npx vue-tsc --noEmit`
 - **改 cloud function** → 改完 `tcb fn deploy auth-otp -e <envId>` 部署
+- **新建 cloud function** → 写完三件套（index.js / package.json / scf_bootstrap），**本地 `tcb fn run` 起 :9000 验 4 个鉴权分支**（health / 401 / 403 / 200）再 `tcb fn deploy --force --deployMode zip`
+- **改 ADMIN_EMAILS** → 必须用 `tcb fn config update fn auth-otp -e <envId> -e ADMIN_EMAILS=xxx@yyy.com`，**不要**把白名单写在 cloudbaserc.json 里（被 .gitignore 包含且和密钥混一起）
 - **打 release** → 必须用时间戳 output（见第 8 节坑）
 - **不要** 直接改 `release/<ts>/win-unpacked/` 里的文件（asar 锁，重打会覆盖）
 - **不要** 删 `release.bak.*` 目录（Defender 锁，删不动，留着就行）
