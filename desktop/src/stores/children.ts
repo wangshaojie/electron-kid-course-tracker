@@ -21,7 +21,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { db, getActiveUid } from '@/lib/cloudbase'
+import { businessApi, getActiveUid } from '@/lib/cloudbase'
 
 export interface Child {
   id: string
@@ -52,34 +52,29 @@ function requireUid(): string {
   return uid
 }
 
-/** 把"当前激活"写回 user_prefs（best-effort，失败不抛） */
+/** 把"当前激活"写回 user_prefs（best-effort，失败不抛）。owner_id 由服务端从 JWT 注入 */
 async function writeActivePref(uid: string, activeChildId: string): Promise<{ ok: boolean; error?: string }> {
+  void uid
   try {
-    const { error } = await db.from('user_prefs').upsert({
-      owner_id: uid,
+    await businessApi<{ active_child_id: string }>('PATCH', '/b/user_prefs', {
       active_child_id: activeChildId,
       updated_at: new Date().toISOString(),
     })
-    if (error) return { ok: false, error: String(error.message ?? error) }
     return { ok: true }
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
-/** 读 user_prefs 单行（按 owner_id） */
+/** 读 user_prefs 单行（按 owner_id，服务端强制过滤）；没记录时返回空数组 */
 async function readActivePref(uid: string): Promise<string | null> {
+  void uid
   try {
-    const { data, error } = await db
-      .from('user_prefs')
-      .select('active_child_id')
-      .eq('owner_id', uid)
-      .maybeSingle()
-    if (error) {
-      console.warn('[children] readActivePref error', error)
-      return null
-    }
-    return (data as { active_child_id: string | null } | null)?.active_child_id ?? null
+    const rows = await businessApi<Array<{ active_child_id: string | null }>>(
+      'GET',
+      '/b/user_prefs?select=active_child_id',
+    )
+    return rows[0]?.active_child_id ?? null
   } catch (e) {
     console.warn('[children] readActivePref failed', e)
     return null
@@ -109,16 +104,7 @@ export const useChildrenStore = defineStore('children', () => {
    */
   async function load() {
     const uid = requireUid()
-    const { data, error } = await db
-      .from('children')
-      .select('*')
-      .eq('owner_id', uid)
-      .order('sort_order', { ascending: true })
-    if (error) {
-      console.error('[children] load error', error)
-      throw error
-    }
-    const list = (data ?? []) as Child[]
+    const list = await businessApi<Child[]>('GET', '/b/children?order=sort_order&asc=true')
     items.value = list
 
     if (list.length === 0) {
@@ -185,17 +171,13 @@ export const useChildrenStore = defineStore('children', () => {
   }
 
   async function create(input: ChildInput): Promise<Child> {
-    const uid = requireUid()
-    const payload: Record<string, unknown> = {
-      owner_id: uid,
+    requireUid()
+    const c = await businessApi<Child>('POST', '/b/children', {
       name: input.name,
       emoji: input.emoji ?? '🧒',
       color: input.color ?? '#3FB87A',
       sort_order: input.sort_order ?? 0,
-    }
-    const { data, error } = await db.from('children').insert(payload).select('*').single()
-    if (error) throw error
-    const c = data as Child
+    })
     items.value.push(c)
     if (items.value.length === 1) {
       // 第一个孩子：本地 + 云端 prefs 都激活
@@ -208,15 +190,8 @@ export const useChildrenStore = defineStore('children', () => {
   }
 
   async function update(id: string, input: Partial<ChildInput>) {
-    const uid = requireUid()
-    const { data, error } = await db.from('children')
-      .update({ ...input })
-      .eq('id', id)
-      .eq('owner_id', uid)
-      .select('*')
-      .single()
-    if (error) throw error
-    const c = data as Child
+    requireUid()
+    const c = await businessApi<Child>('PATCH', `/b/children/${encodeURIComponent(id)}`, { ...input })
     items.value = items.value.map((x) => (x.id === id ? c : x))
     ElMessage.success('已更新')
   }
@@ -225,9 +200,8 @@ export const useChildrenStore = defineStore('children', () => {
     if (items.value.length <= 1) {
       throw new Error('至少需要保留一个孩子档案')
     }
-    const uid = requireUid()
-    const { error } = await db.from('children').delete().eq('id', id).eq('owner_id', uid)
-    if (error) throw error
+    requireUid()
+    await businessApi<{ deleted: number }>('DELETE', `/b/children/${encodeURIComponent(id)}`)
     items.value = items.value.filter((x) => x.id !== id)
     if (activeId.value === id) {
       const next = items.value[0]!

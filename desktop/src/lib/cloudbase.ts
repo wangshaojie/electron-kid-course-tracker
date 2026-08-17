@@ -20,6 +20,8 @@ const region = (import.meta.env.VITE_CLOUDBASE_REGION as string) || 'ap-shanghai
 const accessKey = import.meta.env.VITE_CLOUDBASE_ACCESS_KEY as string
 const authOtpUrl = (import.meta.env.VITE_AUTH_OTP_URL as string) ||
   `https://${envId}.service.tcloudbase.com/auth-otp`
+const dataApiUrl = (import.meta.env.VITE_DATA_API_URL as string) ||
+  `https://${envId}.service.tcloudbase.com/data-api`
 
 if (!envId) {
   throw new Error('VITE_CLOUDBASE_ENV_ID 未设置（.env.development）')
@@ -40,6 +42,9 @@ export const db = app.rdb({ database: 'public' })
 /** auth-otp HTTP function 根 URL */
 export const AUTH_OTP_URL = authOtpUrl
 
+/** data-api HTTP function 根 URL（管理员后台统计） */
+export const DATA_API_URL = dataApiUrl
+
 // ==================== 自建 JWT ====================
 
 const JWT_KEY = 'auth.jwt'
@@ -49,6 +54,8 @@ const UID_KEY = 'auth.uid'
 export interface SessionUser {
   uid: string
   email: string
+  /** 管理员识别：admin 邮箱登录时由 auth-otp /verify 注入；普通用户缺省为 'user' */
+  role?: 'admin' | 'user'
 }
 
 function readLS<T>(key: string): T | null {
@@ -116,8 +123,17 @@ function readJwtExp(token: string): number | null {
 
 /** 拿当前 JWT（自己签的），没登录或已过期返回 null */
 export function getActiveJwt(): string | null {
-  const t = localStorage.getItem(JWT_KEY) ?? sessionStorage.getItem(JWT_KEY)
-  if (!t) return null
+  const raw = localStorage.getItem(JWT_KEY) ?? sessionStorage.getItem(JWT_KEY)
+  if (!raw) return null
+  // persistSession 经 writeLS/writeSS 存储（JSON.stringify），需解包去掉引号；
+  // 兼容历史直接 setItem 存原样的场景
+  let t = raw
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (typeof parsed === 'string') t = parsed
+  } catch {
+    /* raw 不是 JSON，原样使用 */
+  }
   const exp = readJwtExp(t)
   if (exp && exp * 1000 < Date.now()) {
     // 已过期，清理
@@ -164,7 +180,7 @@ export function clearSession() {
 // ==================== auth-otp HTTP 调用 ====================
 
 type SendResult = { ok: true; id: string } | { ok: false; error: string }
-type VerifyResult = { ok: true; token: string; uid: string; email: string } | { ok: false; error: string }
+type VerifyResult = { ok: true; token: string; uid: string; email: string; role: 'admin' | 'user' } | { ok: false; error: string }
 
 /**
  * 把后端 error code / HTTP 状态码翻译成中文文案
@@ -184,6 +200,13 @@ const OTP_ERROR_MAP: Record<string, string> = {
   code_mismatch: '验证码错误，请检查后重新输入',
   too_many_attempts: '验证码错误次数太多，请重新获取',
   invalid_code: '验证码格式不正确（应为 6 位数字）',
+  // 网络
+  network_error: '网络连接失败，请检查网络后重试',
+  // 密码登录
+  invalid_password: '密码格式不正确',
+  weak_password: '密码强度不足（至少 8 位，需含字母和数字）',
+  invalid_credentials: '邮箱或密码错误',
+  too_many_login_attempts: '密码错误次数过多，已锁定 15 分钟，请稍后再试',
   // 服务端
   mail_send_failed: '邮件发送失败，请稍后重试',
   db_error: '服务暂时不可用，请稍后重试',
@@ -248,5 +271,129 @@ export async function otpVerify(email: string, code: string): Promise<VerifyResu
   if (!r.ok || j.error) {
     return { ok: false, error: translateOtpError(j.error, r.status) }
   }
-  return { ok: true, token: j.token, uid: j.uid, email: j.email }
+  return { ok: true, token: j.token, uid: j.uid, email: j.email, role: (j.role === 'admin' ? 'admin' : 'user') }
+}
+
+// ==================== 密码登录 / 设置密码（auth-otp） ====================
+
+type PasswordLoginResult =
+  | { ok: true; token: string; uid: string; email: string; role: 'admin' | 'user' }
+  | { ok: false; error: string }
+type PasswordSetResult = { ok: true } | { ok: false; error: string }
+
+/** auth-otp POST 通用请求：网络错误 / 后端 error 统一走 translateOtpError 翻译成中文 */
+async function postOtp(path: string, body: Record<string, unknown>): Promise<{ status: number; json: any }> {
+  let r: Response
+  try {
+    r = await fetch(`${AUTH_OTP_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+  } catch (e) {
+    return { status: 0, json: { error: 'network_error' } }
+  }
+  const j = await r.json().catch(() => ({}))
+  return { status: r.status, json: j }
+}
+
+/** 密码登录：成功返回与 /verify 完全相同的结构（token/uid/email/role） */
+export async function passwordLogin(email: string, password: string): Promise<PasswordLoginResult> {
+  const { status, json } = await postOtp('/login', { email, password })
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return {
+    ok: true,
+    token: json.token,
+    uid: json.uid,
+    email: json.email,
+    role: json.role === 'admin' ? 'admin' : 'user',
+  }
+}
+
+/** 设置 / 修改密码（需 6 位验证码确认邮箱所有权；首次设置也走这里） */
+export async function setPassword(email: string, code: string, password: string): Promise<PasswordSetResult> {
+  const { status, json } = await postOtp('/set-password', { email, code, password })
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return { ok: true }
+}
+
+/** 忘记密码重置（后端与 set-password 同逻辑，前端文案不同） */
+export async function resetPassword(email: string, code: string, password: string): Promise<PasswordSetResult> {
+  const { status, json } = await postOtp('/reset-password', { email, code, password })
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return { ok: true }
+}
+
+// ==================== data-api HTTP 调用（业务收口 + 管理员后台） ====================
+
+export type DataApiResult<T> =
+  | { ok: true; data: T }
+  | { ok: false; status: number; error: string; detail?: string }
+
+/**
+ * data-api 通用调用（GET/POST/PATCH/DELETE）
+ * - 自动带 Authorization: Bearer <当前 JWT>
+ * - 401/403/5xx 错误透传原文（管理员调试 / 业务 store 需要原文）
+ */
+export async function dataApi<T = unknown>(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  subPath: string,
+  body?: unknown,
+): Promise<DataApiResult<T>> {
+  const tok = getActiveJwt()
+  if (!tok) {
+    return { ok: false, status: 401, error: 'no_active_jwt' }
+  }
+  let r: Response
+  try {
+    r = await fetch(`${DATA_API_URL}${subPath}`, {
+      method,
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${tok}`,
+      },
+      body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(body ?? {}),
+    })
+  } catch (e) {
+    return { ok: false, status: 0, error: 'network_error', detail: (e as Error)?.message ?? String(e) }
+  }
+  let j: any = {}
+  try { j = await r.json() } catch { /* ignore */ }
+  if (!r.ok || j.error) {
+    return {
+      ok: false,
+      status: r.status,
+      error: String(j.error || `http_${r.status}`),
+      detail: typeof j.detail === 'string' ? j.detail : typeof j.message === 'string' ? j.message : undefined,
+    }
+  }
+  return { ok: true, data: j as T }
+}
+
+/** GET 便捷封装（管理员后台用） */
+export async function dataApiGet<T = unknown>(subPath: string): Promise<DataApiResult<T>> {
+  return dataApi<T>('GET', subPath)
+}
+
+/**
+ * 业务 API：失败直接 throw（store 保持现有 `throw error` 行为不变），
+ * 成功返回后端响应体里的 data 载荷（即 { ok, data } 里的 data）
+ */
+export async function businessApi<T = unknown>(
+  method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
+  subPath: string,
+  body?: unknown,
+): Promise<T> {
+  const r = await dataApi<{ ok: true; data: T }>(method, subPath, body)
+  if (!r.ok) {
+    const msg = r.detail ? `${r.error}: ${r.detail}` : r.error
+    throw new Error(msg || `http_${r.status}`)
+  }
+  return r.data.data
 }

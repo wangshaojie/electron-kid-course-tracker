@@ -35,6 +35,10 @@ const menus: MenuItem[] = [
   { path: '/settings', label: '设置', icon: '⚙️' },
 ]
 
+// 管理员菜单（侧栏底部独立入口，仅 admin 角色可见）
+// 路由守卫二次校验：非 admin 直接访问 /admin 也会被踢回 /
+const isAdmin = computed(() => auth.user?.role === 'admin')
+
 const activePath = computed(() => route.path)
 const isFirstRun = computed(
   () => db.ready && children.loaded && children.count === 0,
@@ -155,6 +159,19 @@ watch(
           </div>
           <span class="truncate" :title="auth.user.email ?? auth.user.uid">{{ auth.user.email ?? auth.user.uid }}</span>
         </div>
+        <button
+          v-if="isAdmin"
+          type="button"
+          :class="[
+            'btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs',
+            activePath === '/admin'
+              ? 'bg-moss-100 text-moss-700 font-semibold'
+              : 'text-moss-600 hover:bg-moss-50',
+          ]"
+          @click="go('/admin')"
+        >
+          🛡 管理员后台
+        </button>
         <button
           type="button"
           class="btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-ink-soft hover:bg-moss-50 hover:text-moss-600"

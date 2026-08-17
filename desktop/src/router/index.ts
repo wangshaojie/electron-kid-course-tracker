@@ -8,6 +8,7 @@ const routes: RouteRecordRaw[] = [
   { path: '/checkins', name: 'checkins', component: () => import('@/views/Checkins.vue') },
   { path: '/stats', name: 'stats', component: () => import('@/views/Stats.vue') },
   { path: '/settings', name: 'settings', component: () => import('@/views/Settings.vue') },
+  { path: '/admin', name: 'admin', component: () => import('@/views/Admin.vue'), meta: { requiresAdmin: true } },
   { path: '/:pathMatch(.*)*', redirect: '/' },
 ]
 
@@ -41,6 +42,11 @@ router.beforeEach(async (to) => {
 
   if (!auth.isAuthenticated) {
     return { path: '/login', query: { redirect: to.fullPath } }
+  }
+
+  // 管理员路由守卫：必须 role === 'admin'，否则踢回首页
+  if (to.meta.requiresAdmin && auth.user?.role !== 'admin') {
+    return { path: '/' }
   }
 
   return true

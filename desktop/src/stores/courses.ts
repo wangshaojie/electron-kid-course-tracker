@@ -10,7 +10,7 @@
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { db, getActiveUid } from '@/lib/cloudbase'
+import { businessApi, getActiveUid } from '@/lib/cloudbase'
 import type { CourseSummary, Alert } from '@/types'
 import { daysFromToday } from '@/utils/date'
 import { useCheckinsStore } from './checkins'
@@ -98,28 +98,25 @@ export const useCoursesStore = defineStore('courses', () => {
   })
 
   async function refresh() {
-    const uid = requireUid()
+    requireUid()
     const children = useChildrenStore()
     const cid = children.activeIdSafe
     if (!cid) { items.value = []; return }
     // 客户端聚合 used_hours：先查本 child 的 courses，再查 checkins 汇总
     // 拆两条查询（单账号数据量小可接受）；后续可换 PG RPC 一条搞定
-    const { data: courseRows, error } = await db.from('courses')
-      .select('*')
-      .eq('owner_id', uid)
-      .eq('child_id', cid)
-      .order('paid_at', { ascending: false })
-    if (error) { console.error('[courses] refresh error', error); throw error }
-    const list = (courseRows ?? []) as Array<Omit<Course, 'used_hours' | 'remain_hours' | 'price_per_hour'>>
+    const list = await businessApi<Array<Omit<Course, 'used_hours' | 'remain_hours' | 'price_per_hour'>>>(
+      'GET',
+      `/b/courses?child_id=${encodeURIComponent(cid)}&order=paid_at&asc=false`,
+    )
     if (list.length === 0) { items.value = []; return }
 
     // 拉 checkins 聚合
-    const { data: checkinRows } = await db.from('checkins')
-      .select('course_id, hours')
-      .eq('owner_id', uid)
-      .eq('child_id', cid)
+    const checkinRows = await businessApi<Array<{ course_id: string; hours: number }>>(
+      'GET',
+      `/b/checkins?select=course_id,hours&child_id=${encodeURIComponent(cid)}`,
+    )
     const usedMap = new Map<string, number>()
-    for (const r of (checkinRows ?? []) as Array<{ course_id: string; hours: number }>) {
+    for (const r of checkinRows) {
       usedMap.set(r.course_id, (usedMap.get(r.course_id) ?? 0) + Number(r.hours))
     }
     items.value = list.map((c) => {
@@ -135,13 +132,12 @@ export const useCoursesStore = defineStore('courses', () => {
   }
 
   async function create(input: CourseInput): Promise<Course> {
-    const uid = requireUid()
+    requireUid()
     const children = useChildrenStore()
     const cid = children.activeIdSafe
     if (!cid) throw new Error('请先创建孩子档案')
 
-    const payload: Record<string, unknown> = {
-      owner_id: uid,
+    const c = await businessApi<Course>('POST', '/b/courses', {
       child_id: cid,
       name: input.name,
       institution: input.institution ?? '',
@@ -151,10 +147,7 @@ export const useCoursesStore = defineStore('courses', () => {
       expires_at: input.expires_at ?? null,
       tags: input.tags ?? '',
       note: input.note ?? '',
-    }
-    const { data, error } = await db.from('courses').insert(payload).select('*').single()
-    if (error) throw error
-    const c = data as Course
+    })
     // 补聚合字段
     c.used_hours = 0
     c.remain_hours = c.total_hours
@@ -165,23 +158,15 @@ export const useCoursesStore = defineStore('courses', () => {
   }
 
   async function update(id: string, input: Partial<CourseInput>) {
-    const uid = requireUid()
-    const { data, error } = await db.from('courses')
-      .update({ ...input })
-      .eq('id', id)
-      .eq('owner_id', uid)
-      .select('*')
-      .single()
-    if (error) throw error
-    void data
+    requireUid()
+    await businessApi<Course>('PATCH', `/b/courses/${encodeURIComponent(id)}`, { ...input })
     await refresh()
     ElMessage.success('已更新')
   }
 
   async function remove(id: string) {
-    const uid = requireUid()
-    const { error } = await db.from('courses').delete().eq('id', id).eq('owner_id', uid)
-    if (error) throw error
+    requireUid()
+    await businessApi<{ deleted: number }>('DELETE', `/b/courses/${encodeURIComponent(id)}`)
     await refresh()
     const checkins = useCheckinsStore()
     await checkins.refresh()
