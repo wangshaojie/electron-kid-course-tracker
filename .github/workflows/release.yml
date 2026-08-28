@@ -41,16 +41,19 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
+          # 不要 cache pnpm（让 setup-node 的 post-action 找不到 pnpm 而报错）
+          # 直接不设 cache，让 GitHub 完全不自动 cache
+          # 同时 cache-dependency-path 指向不存在的路径，让任何自动嗅探 noop
+          cache: 'npm'
+          cache-dependency-path: '__no_cache__.json'
 
-      # 直接 npm install -g pnpm@10，比 corepack 稳
-      # (corepack 在某些 windows-latest runner 上 enable 后 PATH 注入会失败)
       - name: Install pnpm globally
-        run: npm install -g pnpm@10
         shell: pwsh
+        run: npm install -g pnpm@10
 
       - name: Verify pnpm
-        run: pnpm --version
         shell: pwsh
+        run: pnpm --version
 
       - name: Install dependencies
         working-directory: desktop
