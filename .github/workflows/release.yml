@@ -37,23 +37,37 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js (LTS Krypton)
-        uses: actions/setup-node@v4
-        with:
-          node-version: '24'
-          # 不要 cache pnpm（让 setup-node 的 post-action 找不到 pnpm 而报错）
-          # 直接不设 cache，让 GitHub 完全不自动 cache
-          # 同时 cache-dependency-path 指向不存在的路径，让任何自动嗅探 noop
-          cache: 'npm'
-          cache-dependency-path: '__no_cache__.json'
-
-      - name: Install pnpm globally
+      # 不用 actions/setup-node@v4 —— 它的 post-action 会嗅探 pnpm-lock.yaml 试图
+      # cache pnpm，但 pnpm 还没装，结果 "Unable to locate pnpm"。
+      # 改用官方 Node 安装包（来自 setup-node 内部同样的源）+ 直接装 pnpm@10。
+      - name: Install Node.js 24 LTS
         shell: pwsh
-        run: npm install -g pnpm@10
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $nodeVersion = '24.19.0'
+          $arch = 'x64'
+          $dest = "$env:ProgramFiles\nodejs"
+          Write-Host "Downloading Node $nodeVersion-$arch ..."
+          $url = "https://nodejs.org/dist/v$nodeVersion/node-v$nodeVersion-win-$arch.zip"
+          $zip = "$env:TEMP\node.zip"
+          Invoke-WebRequest -Uri $url -OutFile $zip -UseBasicParsing
+          Write-Host "Extracting to $dest ..."
+          Expand-Archive -Path $zip -DestinationPath $env:TEMP -Force
+          if (Test-Path $dest) { Remove-Item -Recurse -Force $dest }
+          New-Item -ItemType Directory -Path $dest -Force | Out-Null
+          Copy-Item -Recurse -Force "$env:TEMP\node-v$nodeVersion-win-$arch\*" $dest
+          Write-Host "Node $(node --version) at $dest"
+          # 把 npm 全局目录加到 PATH（pnpm install -g 会落到这）
+          $env:PATH = "$dest;$env:APPDATA\npm;$env:PATH"
+          [Environment]::SetEnvironmentVariable('PATH', $env:PATH, 'User')
 
-      - name: Verify pnpm
+      - name: Install pnpm@10 globally
         shell: pwsh
-        run: pnpm --version
+        run: |
+          $ErrorActionPreference = 'Stop'
+          & "$env:ProgramFiles\nodejs\npm.cmd" install -g pnpm@10
+          $env:PATH = "$env:APPDATA\npm;$env:PATH"
+          & pnpm --version
 
       - name: Install dependencies
         working-directory: desktop
