@@ -135,7 +135,8 @@ async function main() {
   console.log(`\n当前 version: ${before.version}`)
 
   // 2) bump version（pnpm version 会自动改 package.json + 跑 lifecycle scripts）
-  run('pnpm', ['--dir', 'desktop', 'version', level, '--no-git-tag-version'])
+  // 用 --filter / -F 走 pnpm workspace 过滤，比 --dir 在 Windows PowerShell 下更稳
+  run('pnpm', ['version', level, '--no-git-tag-version', '--filter', 'course-tracker'])
 
   const after = readPkg()
   const newVersion = after.version
