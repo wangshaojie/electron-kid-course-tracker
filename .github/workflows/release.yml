@@ -37,21 +37,23 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      - name: Setup Node.js (LTS Krypton)
+      # 用 setup-node 自带的 corepack 启用 pnpm，
+      # 比 pnpm/action-setup@v4 稳（不会出 "Unable to locate pnpm"）
+      # Node 24 LTS 自带 corepack，enable 后 pnpm 命令立即可用
+      - name: Setup Node.js (LTS Krypton) + pnpm
         uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Setup pnpm
-        uses: pnpm/action-setup@v4
-        with:
-          version: 10
-          # 默认就是 true（让 pnpm/action-setup 自己装 pnpm 并加到 PATH）
-          # 别加 run-install: false，否则下面 pnpm install 会找不到命令
+      - name: Enable pnpm via corepack
+        run: |
+          corepack enable
+          corepack prepare pnpm@10 --activate
+          pnpm --version
 
       - name: Install dependencies
         working-directory: desktop
-        run: pnpm install --frozen-lockfile
+        run: pnpm install --frozen-lockfile || pnpm install
 
       # 类型检查：和本地一致，发现类型错就 fail
       - name: Type check
