@@ -35,14 +35,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: '24'
-          cache: 'pnpm'
-          cache-dependency-path: 'desktop/pnpm-lock.yaml'
 
       - name: Setup pnpm
         uses: pnpm/action-setup@v4
         with:
           version: 10
-          run-install: false
+          # 默认就是 true（让 pnpm/action-setup 自己装 pnpm 并加到 PATH）
+          # 别加 run-install: false，否则下面 pnpm install 会找不到命令
 
       - name: Install dependencies
         working-directory: desktop
