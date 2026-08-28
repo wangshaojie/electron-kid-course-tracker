@@ -89,6 +89,8 @@ jobs:
         working-directory: desktop
         shell: pwsh
         env:
+          VITE_CLOUDBASE_ENV_ID: ${{ secrets.VITE_CLOUDBASE_ENV_ID }}
+          VITE_CLOUDBASE_ACCESS_KEY: ${{ secrets.VITE_CLOUDBASE_ACCESS_KEY }}
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
         run: pnpm run build
@@ -99,6 +101,8 @@ jobs:
         working-directory: desktop
         shell: pwsh
         env:
+          VITE_CLOUDBASE_ENV_ID: ${{ secrets.VITE_CLOUDBASE_ENV_ID }}
+          VITE_CLOUDBASE_ACCESS_KEY: ${{ secrets.VITE_CLOUDBASE_ACCESS_KEY }}
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -108,6 +112,8 @@ jobs:
         working-directory: desktop
         shell: pwsh
         env:
+          VITE_CLOUDBASE_ENV_ID: ${{ secrets.VITE_CLOUDBASE_ENV_ID }}
+          VITE_CLOUDBASE_ACCESS_KEY: ${{ secrets.VITE_CLOUDBASE_ACCESS_KEY }}
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
