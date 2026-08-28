@@ -14,6 +14,8 @@ on:
   push:
     tags:
       - 'v*'
+  # 手动触发（Actions 页面 → Run workflow），方便 CI 失败时重跑而不用删 tag
+  workflow_dispatch:
 
 # 写 asset 需要 contents: write
 permissions:
