@@ -15,7 +15,13 @@ on:
     tags:
       - 'v*'
   # 手动触发（Actions 页面 → Run workflow），方便 CI 失败时重跑而不用删 tag
+  # version 必填，例 v0.2.1（**保留 v 前缀** → release tag 也用这个）
   workflow_dispatch:
+    inputs:
+      version:
+        description: '版本号（必填，含 v 前缀，如 v0.2.1）'
+        required: true
+        type: string
 
 # 写 asset 需要 contents: write
 permissions:
@@ -89,17 +95,33 @@ jobs:
           Write-Host "=== release/ ==="
           Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
 
+      # 决定 release 用哪个 tag：
+      #   - push v* 触发：tag 就是 github.ref_name（如 v0.2.1）
+      #   - 手动 Run workflow：tag 取 inputs.version（用户输入）
+      #   - 如果 v* push 进来但没传 version input（不应该发生，但兜底），退回 ref_name
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            # 去掉 ref_name 前缀 refs/tags/ 得到 v0.2.1
+            $tag = "${{ github.ref_name }}".Replace("refs/tags/", "")
+            "version=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.ref_name }}
-          name: ${{ github.ref_name }}
+          tag_name: ${{ steps.version.outputs.version }}
+          name: 一寸光阴 ${{ steps.version.outputs.version }}
           draft: false
-          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          prerelease: ${{ contains(steps.version.outputs.version, '-rc') || contains(steps.version.outputs.version, '-beta') || contains(steps.version.outputs.version, '-alpha') }}
           generate_release_notes: true
+          fail_on_unmatched_files: true
           files: |
             desktop/release/TimeWell-*-x64.exe
             desktop/release/TimeWell-*-portable-x64.exe
-            desktop/release/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
