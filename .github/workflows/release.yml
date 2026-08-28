@@ -145,8 +145,8 @@ jobs:
           prerelease: ${{ contains(steps.version.outputs.version, '-rc') || contains(steps.version.outputs.version, '-beta') || contains(steps.version.outputs.version, '-alpha') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
+          # 用 ** 递归匹配所有子目录（electron-builder 默认产物在 release/${version}/）
           files: |
-            desktop/release/TimeWell-*-x64.exe
-            desktop/release/TimeWell-*-portable-x64.exe
+            desktop/release/**/*.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
