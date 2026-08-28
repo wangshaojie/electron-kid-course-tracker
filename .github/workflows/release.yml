@@ -37,27 +37,30 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
 
-      # 用 setup-node 自带的 corepack 启用 pnpm，
-      # 比 pnpm/action-setup@v4 稳（不会出 "Unable to locate pnpm"）
-      # Node 24 LTS 自带 corepack，enable 后 pnpm 命令立即可用
-      - name: Setup Node.js (LTS Krypton) + pnpm
+      - name: Setup Node.js (LTS Krypton)
         uses: actions/setup-node@v4
         with:
           node-version: '24'
 
-      - name: Enable pnpm via corepack
-        run: |
-          corepack enable
-          corepack prepare pnpm@10 --activate
-          pnpm --version
+      # 直接 npm install -g pnpm@10，比 corepack 稳
+      # (corepack 在某些 windows-latest runner 上 enable 后 PATH 注入会失败)
+      - name: Install pnpm globally
+        run: npm install -g pnpm@10
+        shell: pwsh
+
+      - name: Verify pnpm
+        run: pnpm --version
+        shell: pwsh
 
       - name: Install dependencies
         working-directory: desktop
+        shell: pwsh
         run: pnpm install --frozen-lockfile || pnpm install
 
       # 类型检查：和本地一致，发现类型错就 fail
       - name: Type check
         working-directory: desktop
+        shell: pwsh
         run: pnpm exec vue-tsc --noEmit
 
       # ============================================================
@@ -67,6 +70,7 @@ jobs:
       # ============================================================
       - name: Build renderer (Vite) + main process
         working-directory: desktop
+        shell: pwsh
         env:
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
@@ -76,6 +80,7 @@ jobs:
       # 否则 dist 里的 chunk 会带上错误的占位符
       - name: Package with electron-builder (NSIS)
         working-directory: desktop
+        shell: pwsh
         env:
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
@@ -84,6 +89,7 @@ jobs:
 
       - name: Package with electron-builder (Portable)
         working-directory: desktop
+        shell: pwsh
         env:
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
