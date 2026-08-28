@@ -114,7 +114,7 @@ async function removeCheckin(id: string) {
             本月打卡 {{ monthCount }} 次 · 共 {{ monthHours }} 节，点击日期查看当天详情
           </p>
           <p v-else class="mt-1 text-sm text-ink-soft">
-            共 {{ checkins.items.length }} 条记录，可按课程和时间筛选
+            共 {{ checkins.items.length }} 条记录，可按课程和时间筛选后直接导出 Excel
           </p>
         </div>
         <el-button type="primary" plain @click="toggleView">

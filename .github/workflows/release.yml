@@ -1,0 +1,104 @@
+name: Release
+
+# 推 v* 标签触发（v1.2.3 / v0.2.1 ...）
+# 工作流：装依赖 → 类型检查 → build renderer + main → electron-builder 跑 NSIS + portable → 上传到 GitHub Release
+#
+# 用法（本地）：
+#   pnpm version patch   # bump package.json version
+#   git add -A && git commit -m "release: vX.Y.Z"
+#   git tag vX.Y.Z
+#   git push origin main --tags
+# → CI 触发本工作流，跑完自动创建 GitHub Release 并附上 .exe 资产
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+# 写 asset 需要 contents: write
+permissions:
+  contents: write
+
+jobs:
+  release:
+    name: Build & Publish Windows Release
+    runs-on: windows-latest
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js (LTS Krypton)
+        uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: 'pnpm'
+          cache-dependency-path: 'desktop/pnpm-lock.yaml'
+
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+          run-install: false
+
+      - name: Install dependencies
+        working-directory: desktop
+        run: pnpm install --frozen-lockfile
+
+      # 类型检查：和本地一致，发现类型错就 fail
+      - name: Type check
+        working-directory: desktop
+        run: pnpm exec vue-tsc --noEmit
+
+      # ============================================================
+      # 渲染端 + 主进程 build（一次完成，env 全程透传）
+      # 注意：vite-plugin-electron/simple 会在 electron-builder 阶段
+      # 二次 build main，必须确保两次都能拿到 VITE_* env
+      # ============================================================
+      - name: Build renderer (Vite) + main process
+        working-directory: desktop
+        env:
+          VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
+          VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
+        run: pnpm run build
+
+      # 产物改名 + electron-builder 二次 build 时也要带 env，
+      # 否则 dist 里的 chunk 会带上错误的占位符
+      - name: Package with electron-builder (NSIS)
+        working-directory: desktop
+        env:
+          VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
+          VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-builder --win nsis --x64 --publish never
+
+      - name: Package with electron-builder (Portable)
+        working-directory: desktop
+        env:
+          VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
+          VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: pnpm exec electron-builder --win portable --x64 --publish never
+
+      # 产物会落到 desktop/release/<version>/ 目录下
+      - name: List release artifacts
+        working-directory: desktop
+        run: |
+          Write-Host "=== release/ ==="
+          Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          generate_release_notes: true
+          files: |
+            desktop/release/TimeWell-*-x64.exe
+            desktop/release/TimeWell-*-portable-x64.exe
+            desktop/release/*.exe
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

@@ -342,7 +342,9 @@ pnpm build:win:portable
 # 只打 unpacked 解包目录（build:win:dir）
 pnpm build:win:dir
 
-# 跑在生产模式（不自动开 DevTools；想开就 --open-devtools）
+# 一键发版（推荐）：校验工作树 + bump version + commit + tag + push，
+# 推 tag 后 .github/workflows/release.yml 自动跑 CI 打包 + 上传 Release
+pnpm release patch   # 交互式去掉 patch 也行：pnpm release# 跑在生产模式（不自动开 DevTools；想开就 --open-devtools）
 pnpm exec electron dist-electron/main.mjs --open-devtools
 ```
 
@@ -423,6 +425,34 @@ tcb fn config update fn auth-otp -e <envId> \
 cloudbaserc.json 也可写 `"ADMIN_EMAILS": "admin@240730.xyz"`，但因 cloudbaserc.json 整体被 `.gitignore` 包含（防密钥泄露），不推荐把白名单写在仓库里，**走 `tcb fn config update` 控制台注入更稳**。
 
 **撤销管理员**只需重新跑一次 `tcb fn config update` 把邮箱从白名单去掉；下次请求起效（JWT role 字段会被忽略，data-api 现查 env 拒绝）。
+
+### 7.5 桌面端 release（GitHub Actions 自动打包 + 发布）
+
+走 `.github/workflows/release.yml`：推 `v*` tag 触发，CI 跑 Node 24 + pnpm 10 → 类型检查 → `pnpm build` → electron-builder 打 NSIS + portable 两份 → 用 `softprops/action-gh-release@v2` 创建 GitHub Release 并附上 `.exe` 资产。
+
+**本地发版流程**（一条命令搞定，校验工作树 + bump + commit + tag + push）：
+```bash
+cd desktop && pnpm release           # 交互式选 major/minor/patch
+# 或
+pnpm release patch                   # 直跳 patch
+pnpm release 1.2.3                   # 直跳指定版本
+```
+
+底层等价于：
+1. `git status --porcelain` 必须为空（工作树干净）
+2. `pnpm --dir desktop version <level> --no-git-tag-version` bump `desktop/package.json`
+3. `git add -A && git commit -m "release: vX.Y.Z"`
+4. `git tag vX.Y.Z && git push origin <branch> --tags`
+5. CI 跑完 → `https://github.com/<owner>/<repo>/releases/tag/vX.Y.Z` 自动出现 .exe 资产
+
+**首次配 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
+- `VITE_AUTH_OTP_URL`（如 `https://<envId>.ap-shanghai.app.tcloudbase.com/auth-otp`）
+- `VITE_DATA_API_URL`（如 `https://<envId>.ap-shanghai.app.tcloudbase.com/data-api`）
+- `GITHUB_TOKEN` 自动提供，无需手动配
+
+⚠️ **package.json version 才是 electron-builder 命名产物的依据**，不是 git tag。
+修改代码 → bump version → commit → tag → push 顺序**不可颠倒**（见 §8 踩坑历史）。
+- 反例：commit + tag v1.1.1 + push → CI 跑通后用 package.json 旧 version 1.1.0 发布到 v1.1.0 release（覆盖！）
 
 ## 8. 已知坑（必看）
 
