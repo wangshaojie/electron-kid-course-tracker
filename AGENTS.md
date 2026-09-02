@@ -237,22 +237,74 @@ kid-course-tracker/
 
 ## 4. 核心约定
 
-### 4.1 鉴权流程
+### 4.1 鉴权流程（v0.3+：密码为主，邮箱为辅）
 
-验证码登录（默认）：
-1. 用户在 `Login.vue` 输邮箱 → `auth.sendCode()` → 调云函数 `/send` → 邮件发 6 位码
-2. 输码 → `auth.verifyCode()` → 调云函数 `/verify` → 拿到 `{ token, uid, email }`
-3. `persistSession(token, user, remember)`：
-   - `remember=true` → localStorage（30 天免登录）
-   - `remember=false` → sessionStorage（关 tab 即失效）
-4. `auth.bootstrap()` 在 `main.ts` 启动时从 storage 恢复
+**核心思路**：密码是主凭证，邮箱**仅用于**注册/找回/改密时的身份验证。注册即设密，登录走密码，不存在"只有邮箱没密码"的合法状态。
 
-密码登录（可选，与验证码并存，v0.3+）：
-- `Login.vue` 双 Tab（验证码 / 密码）；密码登录走 `/login`，成功签**与 `/verify` 完全相同的 JWT**，data-api / 管理员白名单 / owner_id 逻辑零改动
-- **首次设置密码**：登录页密码 Tab → "设置 / 修改密码"折叠区 → 验证码确认邮箱所有权 → `/set-password` 写 scrypt 哈希（`crypto.scryptSync` 零新依赖，格式 `scrypt$N$r$p$salt$hash` 参数内嵌可升级）
-- 忘记密码走 `/reset-password`（后端与 set-password 同逻辑）
-- **安全设计**：密码 ≥ 8 位含字母数字（前端 + 服务端双重校验）；登录失败统一返回 `invalid_credentials`（防邮箱枚举）；按 email 连续失败 5 次锁 15 分钟（内存 Map，冷启动重置可接受）；未设密码的邮箱 `/login` 也返回同一句错误
-- 不设密码的用户照常用验证码登录，互不影响
+#### 三种主流程
+
+**1. 注册（`/register`）**：
+- `Login.vue` 密码 Tab 底部 "点此注册" → `RegisterDialog`
+- Step 1: 邮箱 + 密码 + 确认密码（前端校验 ≥ 8 位含字母数字 + 两次一致）
+- Step 2: 邮箱验证码（6 位）→ Step 3: 自动登录 + 跳首页
+- 后端一次性走完：校验 OTP（消耗） → 校验密码强度 → 查 `user_passwords` 不存在 → 写 hash → 签 JWT 返回
+- **邮箱已注册 → 409 `email_already_registered`**，引导去登录/忘记密码
+- 成功返回 `{ token, uid, email, role }` 与 `/login` / `/verify` **结构完全一致**
+
+**2. 登录（`/login`，默认主路径）**：
+- `Login.vue` 密码 Tab（默认）→ 邮箱 + 密码 → `/login`
+- 成功签与 `/register` / `/verify` **完全相同的 JWT**，data-api / 管理员白名单 / owner_id 逻辑零改动
+- **安全设计**：
+  - 密码 ≥ 8 位含字母数字（前端 + 服务端双重校验）
+  - 登录失败统一返回 `invalid_credentials`（防邮箱枚举）
+  - 按 email 连续失败 5 次锁 15 分钟（内存 Map `loginFails`，冷启动重置可接受）
+  - 未设密码的邮箱 `/login` 也返回同一句错误（理论上 v0.3 后不存在这种状态，但保留兜底）
+- 失败计数复用 `loginFails`（不重新发明）
+
+**3. 验证码登录（`/verify`，折叠为"其他方式"，仅老用户应急）**：
+- `Login.vue` → "其他方式" Tab → 邮箱 + 6 位码 → `/verify`
+- **v0.3 之后**：仅供老用户 / 设备迁移应急使用，新用户必须走注册设密
+- `Login.vue` 验证码 Tab 顶部加黄色提示框："仅老用户应急 / 设备迁移使用"
+
+#### Session 持久化（与 v0.2 一致）
+
+`persistSession(token, user, remember)`：
+- `remember=true` → localStorage（30 天免登录）
+- `remember=false` → sessionStorage（关 tab 即失效）
+- `auth.bootstrap()` 在 `main.ts` 启动时从 storage 恢复
+
+#### 已登录用户改密码（v0.3+）
+
+- **入口**：`Settings.vue` → "账号安全"卡片 → "修改密码" 按钮 → `ChangePasswordDialog`
+- **流程**：输旧密码 + 新密码 + 确认新密码 → `auth.changePassword()` → 调云函数 `POST /change-password`（需 `Authorization: Bearer <JWT>`）→ 校验旧密码 + 写新 hash + **重新签 JWT**（30 天计时重置）
+- **安全设计**：
+  - 改密码**必传旧密码**（防止邮箱临时被劫持时无门槛改密）
+  - 旧密码错误复用 `loginFails` 锁频（连续 5 次错 → 锁 15 分钟，错误码 `wrong_old_password_locked`）
+  - 未设过密码的用户走 `/change-password` 返回 `password_not_set` 错误码
+  - 新密码不能与旧密码相同（错误码 `same_as_old`）
+  - 改密成功**只刷新当前 session 的 JWT**，不踢其他设备（自签 JWT 没法主动失效其他 token，只能等 30 天过期）
+
+#### 忘记密码（`/reset-password`）
+
+- **入口**：`Login.vue` 密码 Tab 底部 "忘记密码" 链接 → `ForgotPasswordDialog`
+- **流程**：邮箱（可改）→ 6 位 OTP → 新密码 + 确认 → 成功后踢回登录页
+- 后端与 `/set-password` 同逻辑，**走 OTP 确认邮箱所有权，不需要旧密码**
+- 未设过密码的用户也能用（直接就设置了）
+
+#### 密码状态查询
+
+- `GET /password-status`（需 Bearer JWT）→ `{ has_password: boolean, updated_at: string|null }`
+- `Settings.vue` 进入时调一次 `auth.refreshPasswordStatus()` 决定展示"已设置（上次修改 XX）" / "未设置"文案
+- **不能**用本地 `user_passwords` 表反推（前端拿不到，安全设计）
+- 未设密码时 `PasswordStatusCard` 显示**老用户迁移提示**："v0.3 之前注册的账号未设密码，请尽快'设置密码'完成迁移"
+
+#### 老用户迁移（v0.3 之前注册的账号）
+
+- v0.2 及更早：注册 = 验证码登录即注册，**没强制设密**
+- v0.3 升级后：未设密码的账号在 `PasswordStatusCard` 显示黄色迁移提示
+- 迁移方式：点 "设置密码" 按钮 → 走 ForgotPasswordDialog（OTP + 新密码）
+- **不强制**——但给强引导文案
+- `/verify` 仍保留，老用户可继续用验证码登录（应急入口）
 
 ### 4.2 业务数据流
 

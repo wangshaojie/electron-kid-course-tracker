@@ -207,6 +207,17 @@ const OTP_ERROR_MAP: Record<string, string> = {
   weak_password: '密码强度不足（至少 8 位，需含字母和数字）',
   invalid_credentials: '邮箱或密码错误',
   too_many_login_attempts: '密码错误次数过多，已锁定 15 分钟，请稍后再试',
+  // 已登录改密码
+  wrong_old_password: '旧密码错误，请检查后重新输入',
+  wrong_old_password_locked: '旧密码错误次数过多，已锁定 15 分钟，请稍后再试',
+  same_as_old: '新密码不能与旧密码相同',
+  password_not_set: '当前账号尚未设置密码，请使用"忘记密码"功能设置',
+  // 注册
+  email_already_registered: '该邮箱已注册，请直接登录或使用"忘记密码"重置',
+  // 鉴权（Bearer）
+  no_bearer: '请先登录后再操作',
+  invalid_token: '登录状态已失效，请重新登录',
+  token_expired: '登录状态已过期，请重新登录',
   // 服务端
   mail_send_failed: '邮件发送失败，请稍后重试',
   db_error: '服务暂时不可用，请稍后重试',
@@ -328,6 +339,110 @@ export async function resetPassword(email: string, code: string, password: strin
     return { ok: false, error: translateOtpError(json.error, status) }
   }
   return { ok: true }
+}
+
+// ==================== 注册（auth-otp /register）===================
+// 注册即设密：OTP 验证邮箱所有权 + 写密码 + 签 JWT（一次走完）
+// 成功返回与 /verify /login 完全一致（token/uid/email/role）
+type RegisterResult =
+  | { ok: true; token: string; uid: string; email: string; role: 'admin' | 'user' }
+  | { ok: false; error: string }
+
+export async function register(email: string, code: string, password: string): Promise<RegisterResult> {
+  const { status, json } = await postOtp('/register', { email, code, password })
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return {
+    ok: true,
+    token: json.token,
+    uid: json.uid,
+    email: json.email,
+    role: json.role === 'admin' ? 'admin' : 'user',
+  }
+}
+
+// ==================== 已登录改密码（auth-otp /change-password + /password-status）===================
+
+type ChangePasswordResult =
+  | { ok: true; token: string; uid: string; email: string; role: 'admin' | 'user' }
+  | { ok: false; error: string }
+type PasswordStatusResult =
+  | { ok: true; has_password: boolean; updated_at: string | null }
+  | { ok: false; error: string }
+
+/** auth-otp 带 Bearer 的 POST（已登录改密码用） */
+async function postOtpAuth(path: string, body: Record<string, unknown>): Promise<{ status: number; json: any }> {
+  const tok = getActiveJwt()
+  if (!tok) return { status: 401, json: { error: 'no_bearer' } }
+  let r: Response
+  try {
+    r = await fetch(`${AUTH_OTP_URL}${path}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+      body: JSON.stringify(body),
+    })
+  } catch {
+    return { status: 0, json: { error: 'network_error' } }
+  }
+  const j = await r.json().catch(() => ({}))
+  return { status: r.status, json: j }
+}
+
+/** auth-otp 带 Bearer 的 GET（查询密码状态用） */
+async function getOtpAuth(path: string): Promise<{ status: number; json: any }> {
+  const tok = getActiveJwt()
+  if (!tok) return { status: 401, json: { error: 'no_bearer' } }
+  let r: Response
+  try {
+    r = await fetch(`${AUTH_OTP_URL}${path}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${tok}` },
+    })
+  } catch {
+    return { status: 0, json: { error: 'network_error' } }
+  }
+  const j = await r.json().catch(() => ({}))
+  return { status: r.status, json: j }
+}
+
+/**
+ * 已登录用户修改密码（必传旧密码）
+ * - 成功返回新签发的 JWT（自动 persistSession 替换）
+ * - 失败返回中文错误
+ */
+export async function changePassword(oldPassword: string, newPassword: string): Promise<ChangePasswordResult> {
+  const { status, json } = await postOtpAuth('/change-password', {
+    old_password: oldPassword,
+    new_password: newPassword,
+  })
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return {
+    ok: true,
+    token: json.token,
+    uid: json.uid,
+    email: json.email,
+    role: json.role === 'admin' ? 'admin' : 'user',
+  }
+}
+
+/**
+ * 查询当前账号密码状态（需登录）
+ * - has_password=false → 用户从未设过密码，应该走"忘记密码"或"首次设置"流程
+ * - has_password=true + updated_at → 已设过，显示"上次修改 XX"
+ */
+export async function getPasswordStatus(): Promise<PasswordStatusResult> {
+  const { status, json } = await getOtpAuth('/password-status')
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return {
+    ok: true,
+    has_password: json.has_password === true,
+    updated_at: typeof json.updated_at === 'string' ? json.updated_at : null,
+  }
 }
 
 // ==================== data-api HTTP 调用（业务收口 + 管理员后台） ====================

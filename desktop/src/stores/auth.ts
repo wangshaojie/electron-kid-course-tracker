@@ -20,6 +20,9 @@ import {
   passwordLogin,
   setPassword as setPasswordApi,
   resetPassword as resetPasswordApi,
+  changePassword as changePasswordApi,
+  getPasswordStatus as getPasswordStatusApi,
+  register as registerApi,
   getActiveUser,
   getActiveJwt,
   persistSession,
@@ -115,6 +118,70 @@ export const useAuthStore = defineStore('auth', () => {
     return { error: null }
   }
 
+  /**
+   * 注册（OTP + 设密 + 签 JWT，一次走完）
+   * 成功路径与 loginWithPassword 完全一致：存 token + userRev+1 触发业务重载
+   * 失败（邮箱已注册 / OTP 错 / 弱密码）返回中文错误
+   */
+  async function register(
+    email: string,
+    code: string,
+    password: string,
+    remember: boolean = true,
+  ): Promise<{ error: string | null }> {
+    const r = await registerApi(email, code, password)
+    if (!r.ok) return { error: r.error }
+    token.value = r.token
+    user.value = { uid: r.uid, email: r.email, role: r.role }
+    status.value = 'authenticated'
+    userRev.value += 1
+    persistSession(r.token, user.value, remember)
+    persistEmail(email)
+    return { error: null }
+  }
+
+  /**
+   * 已登录用户修改密码（必传旧密码）
+   * 成功 = 自动 persistSession 替换 token（30 天计时重置）
+   * 失败 = 返回中文错误，session 保持不变
+   */
+  async function changePassword(
+    oldPassword: string,
+    newPassword: string,
+    remember: boolean = true,
+  ): Promise<{ error: string | null }> {
+    const r = await changePasswordApi(oldPassword, newPassword)
+    if (!r.ok) return { error: r.error }
+    // 同步新 token + user（保持当前 session 不被打回 Login 页）
+    token.value = r.token
+    user.value = { uid: r.uid, email: r.email, role: r.role }
+    status.value = 'authenticated'
+    // 推断 remember 偏好（与登录保持一致）
+    const pref = (() => {
+      try {
+        return localStorage.getItem('auth.remember') !== '0'
+      } catch {
+        return true
+      }
+    })()
+    persistSession(r.token, user.value, remember ?? pref)
+    return { error: null }
+  }
+
+  /**
+   * 查询当前账号密码状态（has_password / updated_at）
+   * 未登录时由后端返回 401 → 自动转中文
+   */
+  async function refreshPasswordStatus(): Promise<{
+    has_password: boolean
+    updated_at: string | null
+    error: string | null
+  }> {
+    const r = await getPasswordStatusApi()
+    if (!r.ok) return { has_password: false, updated_at: null, error: r.error }
+    return { has_password: r.has_password, updated_at: r.updated_at, error: null }
+  }
+
   async function signOut(): Promise<void> {
     // 关闭残留的长驻 Toast（如"当前账号下没有找到宝贝数据"），避免退出后还挂在屏幕上
     ElMessage.closeAll()
@@ -137,6 +204,9 @@ export const useAuthStore = defineStore('auth', () => {
     loginWithPassword,
     setPassword,
     resetPassword,
+    changePassword,
+    refreshPasswordStatus,
+    register,
     signOut,
   }
 })

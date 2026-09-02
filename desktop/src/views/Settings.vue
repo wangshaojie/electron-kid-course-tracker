@@ -15,6 +15,7 @@ import { useChildrenStore, type Child } from '@/stores/children'
 import { dangerousConfirm } from '@/utils/confirm'
 import { ElMessage } from 'element-plus'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
+import PasswordStatusCard from '@/components/account/PasswordStatusCard.vue'
 
 const courses = useCoursesStore()
 const checkins = useCheckinsStore()
@@ -135,6 +136,9 @@ function onWipe() {
         </p>
       </div>
 
+      <!-- 账号安全（密码状态 + 修改/忘记密码入口） -->
+      <PasswordStatusCard />
+
       <!-- 数据存储说明 -->
       <div class="card-base">
         <h3 class="mb-1 font-bold text-ink">☁️ 数据存储</h3>
@@ -163,7 +167,7 @@ function onWipe() {
         <h3 class="mb-1 font-bold text-ink">ℹ️ 关于</h3>
         <dl class="grid grid-cols-2 gap-2 text-sm">
           <dt class="text-ink-soft">软件名称</dt><dd>一寸光阴</dd>
-          <dt class="text-ink-soft">版本</dt><dd>v0.2.0 · 多宝贝支持</dd>
+          <dt class="text-ink-soft">版本</dt><dd>v0.4.0 · 密码为主</dd>
           <dt class="text-ink-soft">技术栈</dt><dd>Electron + Vue 3 + CloudBase PG + Element Plus + ECharts</dd>
           <dt class="text-ink-soft">数据位置</dt>
           <dd>云端 CloudBase PostgreSQL（多设备同步）</dd>

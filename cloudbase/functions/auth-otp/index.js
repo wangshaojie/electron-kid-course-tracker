@@ -5,8 +5,11 @@
  *   POST /send            { email }                       → 生成 6 位码 + 存 PG + 调 Resend 发邮件
  *   POST /verify          { email, code }                 → 校验码 + 标记 consumed + 返回自签 JWT
  *   POST /login           { email, password }             → 密码登录（可选；未设密码返回统一错误防枚举）
- *   POST /set-password    { email, code, password }       → 验证码确认邮箱所有权后 设置/修改 密码
+ *   POST /set-password    { email, code, password }       → 验证码确认邮箱所有权后 设置/修改 密码（老用户迁移 / 已登录改密辅助）
  *   POST /reset-password  { email, code, password }       → 忘记密码重置（与 set-password 同逻辑）
+ *   POST /register        { email, code, password }       → 注册即设密（一次性走完 OTP + 写密码 + 签 JWT；邮箱已注册返 409）
+ *   POST /change-password { old_password, new_password }  → 已登录用户改密码（需 Bearer JWT；旧密码错 5 次锁 15 分钟）
+ *   GET  /password-status                                → 查询当前账号是否设过密码 + 上次修改时间（需 Bearer JWT）
  *   GET  /health                                          → { ok: true }
  *
  * 环境变量（在 tcb 部署时通过 cloudbaserc.json envVariables 注入）：
@@ -382,6 +385,127 @@ async function handleLogin(req, res, body) {
   return sendJson(res, 200, { ok: true, token, uid, email, role }, req)
 }
 
+// ============ 已登录用户改密码（需 JWT + 旧密码）============
+// 与 /set-password 区别：
+//   - 不依赖邮箱可达（用户换了主邮箱但记得旧密码）
+//   - 错误计数复用 loginFails（同 key 锁 15 分钟），不重新发明
+//   - 成功 = 写新 hash + 重新签 JWT（让当前 session 计时重置）
+// 同步版本！不能 async —— 内部没 await，包成 Promise 后调用方 auth.status 会是 undefined
+function verifyBearer(req) {
+  const auth = req.headers['authorization'] || req.headers['Authorization'] || ''
+  const m = String(auth).match(/^Bearer\s+(.+)$/i)
+  if (!m) return { ok: false, status: 401, error: 'no_bearer' }
+  const token = m[1].trim()
+  try {
+    const part = token.split('.')[1]
+    if (!part) return { ok: false, status: 401, error: 'invalid_token' }
+    const b64 = part.replace(/-/g, '+').replace(/_/g, '/').padEnd(part.length + ((4 - (part.length % 4)) % 4), '=')
+    const payload = JSON.parse(Buffer.from(b64, 'base64').toString('utf8'))
+    // 验签
+    const sigPart = token.split('.')[2]
+    const expected = crypto.createHmac('sha256', JWT_SECRET).update(`${token.split('.')[0]}.${token.split('.')[1]}`).digest('base64url')
+    if (sigPart !== expected) return { ok: false, status: 401, error: 'invalid_token' }
+    if (typeof payload.exp === 'number' && payload.exp * 1000 < Date.now()) {
+      return { ok: false, status: 401, error: 'token_expired' }
+    }
+    if (!payload.email || !payload.uid) return { ok: false, status: 401, error: 'invalid_token' }
+    return { ok: true, email: String(payload.email).toLowerCase(), uid: String(payload.uid), role: payload.role }
+  } catch {
+    return { ok: false, status: 401, error: 'invalid_token' }
+  }
+}
+
+async function handleChangePassword(req, res, body) {
+  const auth = verifyBearer(req)
+  if (!auth.ok) return sendJson(res, auth.status, { error: auth.error }, req)
+  const email = auth.email
+  const oldPassword = String(body.old_password || '')
+  const newPassword = String(body.new_password || '')
+  if (!oldPassword) return sendJson(res, 400, { error: 'invalid_password' }, req)
+  if (!isValidPassword(newPassword)) return sendJson(res, 400, { error: 'weak_password' }, req)
+  if (oldPassword === newPassword) return sendJson(res, 400, { error: 'same_as_old' }, req)
+
+  // 锁频检查（复用 loginFails）
+  const lock = loginFails.get(email)
+  if (lock && Date.now() - lock.lockedAt < LOGIN_LOCK_MS) {
+    const retryAfterSec = Math.ceil((LOGIN_LOCK_MS - (Date.now() - lock.lockedAt)) / 1000)
+    return sendJson(res, 429, { error: 'wrong_old_password_locked', retryAfterSec }, req)
+  }
+  if (lock) loginFails.delete(email)
+
+  // 查 user_passwords
+  let row = null
+  try {
+    const q = await rdb().from('user_passwords').select('*').eq('email', email).limit(1)
+    if (q && q.error) throw new Error(q.error.message || JSON.stringify(q.error))
+    row = Array.isArray(q.data) ? q.data[0] : q.data
+  } catch (e) {
+    console.error('[change-password] rdb.select error:', e)
+    return sendJson(res, 500, { error: 'db_error' }, req)
+  }
+
+  // 用户根本没设过密码 = 不能走"改密"路径（让他走"忘记密码"）
+  if (!row) {
+    return sendJson(res, 400, { error: 'password_not_set' }, req)
+  }
+
+  const ok = verifyPassword(oldPassword, row.password_hash)
+  if (!ok) {
+    const cur = loginFails.get(email) || { count: 0, lockedAt: 0 }
+    cur.count += 1
+    if (cur.count >= LOGIN_FAIL_LIMIT) {
+      cur.count = 0
+      cur.lockedAt = Date.now()
+    }
+    loginFails.set(email, cur)
+    return sendJson(res, 401, { error: 'wrong_old_password' }, req)
+  }
+  loginFails.delete(email)
+
+  // 写新 hash
+  const hash = hashPassword(newPassword)
+  const now = new Date().toISOString()
+  try {
+    const u = await rdb().from('user_passwords').update({ password_hash: hash, updated_at: now }).eq('email', email)
+    if (u && u.error) throw new Error(u.error.message || JSON.stringify(u.error))
+  } catch (e) {
+    console.error('[change-password] rdb.update error:', e)
+    return sendJson(res, 500, { error: 'db_error' }, req)
+  }
+
+  // 重新签 JWT（让当前 session 计时重置；其他设备的旧 token 在 30 天内仍有效——做不到踢人）
+  const role = isAdminEmail(email) ? 'admin' : 'user'
+  const token = signJwt({ email, uid: auth.uid, role })
+  return sendJson(res, 200, { ok: true, token, uid: auth.uid, email, role }, req)
+}
+
+// 查询密码状态：是否设过 + 上次修改时间（JWT 鉴权，只看自己）
+async function handlePasswordStatus(req, res) {
+  const auth = verifyBearer(req)
+  if (!auth.ok) return sendJson(res, auth.status, { error: auth.error }, req)
+  try {
+    const q = await rdb()
+      .from('user_passwords')
+      .select('updated_at, created_at')
+      .eq('email', auth.email)
+      .limit(1)
+    if (q && q.error) throw new Error(q.error.message || JSON.stringify(q.error))
+    const row = Array.isArray(q.data) ? q.data[0] : q.data
+    if (!row) {
+      return sendJson(res, 200, { ok: true, has_password: false, updated_at: null }, req)
+    }
+    return sendJson(
+      res,
+      200,
+      { ok: true, has_password: true, updated_at: row.updated_at || row.created_at || null },
+      req,
+    )
+  } catch (e) {
+    console.error('[password-status] rdb.select error:', e)
+    return sendJson(res, 500, { error: 'db_error' }, req)
+  }
+}
+
 // 设置 / 修改 / 重置密码：必须先用 6 位验证码确认邮箱所有权（复用 OTP 限流）
 // /set-password 与 /reset-password 共用（前端文案不同）
 async function handleSetPassword(req, res, body) {
@@ -412,6 +536,60 @@ async function handleSetPassword(req, res, body) {
     return sendJson(res, 500, { error: 'db_error' }, req)
   }
   return sendJson(res, 200, { ok: true }, req)
+}
+
+// ============== /register（注册即设密，一次走完）=============
+// 流程：校验 OTP → 校验密码强度 → 检查邮箱未注册 → 写 user_passwords → 签 JWT 返回
+// 跟 /verify 返回结构完全一致（token/uid/email/role），前端可直接走 loginWithPassword 的后续逻辑
+// 安全点：
+//   - 邮箱已注册直接拒绝（email_already_registered），不暴露 user_passwords 是否存在
+//   - 复用 verifyOtpAndConsume（限流 + 5 次错码）
+async function handleRegister(req, res, body) {
+  const email = (body.email || '').trim().toLowerCase()
+  const code = String(body.code || '').trim()
+  const password = String(body.password || '')
+  if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' }, req)
+  if (!/^\d{6}$/.test(code)) return sendJson(res, 400, { error: 'invalid_code' }, req)
+  if (!isValidPassword(password)) return sendJson(res, 400, { error: 'weak_password' }, req)
+
+  // 1) 校验 OTP（必须有效 + 消耗）
+  const r = await verifyOtpAndConsume(email, code)
+  if (!r.ok) return sendJson(res, r.status, { error: r.error }, req)
+
+  // 2) 邮箱是否已注册？查 user_passwords
+  try {
+    const q = await rdb().from('user_passwords').select('email').eq('email', email).limit(1)
+    if (q && q.error) throw new Error(q.error.message || JSON.stringify(q.error))
+    const exists = Array.isArray(q.data) ? q.data.length > 0 : !!q.data
+    if (exists) {
+      return sendJson(res, 409, { error: 'email_already_registered' }, req)
+    }
+  } catch (e) {
+    console.error('[register] rdb.select error:', e)
+    return sendJson(res, 500, { error: 'db_error' }, req)
+  }
+
+  // 3) 写密码
+  const hash = hashPassword(password)
+  const now = new Date().toISOString()
+  try {
+    const ins = await rdb().from('user_passwords').insert({
+      email,
+      password_hash: hash,
+      created_at: now,
+      updated_at: now,
+    })
+    if (ins && ins.error) throw new Error(ins.error.message || JSON.stringify(ins.error))
+  } catch (e) {
+    console.error('[register] rdb.insert error:', e)
+    return sendJson(res, 500, { error: 'db_error' }, req)
+  }
+
+  // 4) 签 JWT 返回（与 /verify /login 结构完全一致）
+  const uid = crypto.createHash('sha256').update(email).digest('hex').slice(0, 32)
+  const role = isAdminEmail(email) ? 'admin' : 'user'
+  const token = signJwt({ email, uid, role })
+  return sendJson(res, 200, { ok: true, token, uid, email, role }, req)
 }
 
 // ============== SCF Event 入口（API 网关 SCF 类型路由）=============
@@ -490,6 +668,21 @@ exports.main = async (event, _context) => {
       return { statusCode: captured.status, headers: captured.headers, body: captured.body }
     }
 
+    if (method === 'POST' && subPath === '/register') {
+      await handleRegister(fakeReq, fakeRes, body)
+      return { statusCode: captured.status, headers: captured.headers, body: captured.body }
+    }
+
+    if (method === 'POST' && subPath === '/change-password') {
+      await handleChangePassword(fakeReq, fakeRes, body)
+      return { statusCode: captured.status, headers: captured.headers, body: captured.body }
+    }
+
+    if (method === 'GET' && subPath === '/password-status') {
+      await handlePasswordStatus(fakeReq, fakeRes)
+      return { statusCode: captured.status, headers: captured.headers, body: captured.body }
+    }
+
     return reply(404, { error: 'not_found', path: rawPath, subPath, method })
   } catch (e) {
     console.error('[main] error:', e)
@@ -513,6 +706,15 @@ if (require.main === module) {
       if (req.method === 'POST' && url.pathname === '/login') return await handleLogin(req, res, body)
       if (req.method === 'POST' && (url.pathname === '/set-password' || url.pathname === '/reset-password')) {
         return await handleSetPassword(req, res, body)
+      }
+      if (req.method === 'POST' && url.pathname === '/register') {
+        return await handleRegister(req, res, body)
+      }
+      if (req.method === 'POST' && url.pathname === '/change-password') {
+        return await handleChangePassword(req, res, body)
+      }
+      if (req.method === 'GET' && url.pathname === '/password-status') {
+        return await handlePasswordStatus(req, res)
       }
       return sendJson(res, 404, { error: 'not_found' }, req)
     } catch (e) {
