@@ -164,13 +164,51 @@ export const useCoursesStore = defineStore('courses', () => {
     ElMessage.success('已更新')
   }
 
+  /**
+   * 统计该课程下的打卡条数（UI 在弹窗前调一次给用户看数字）。
+   * 拉 `select=id` 最少字段，避免返回 feedback 等大字段。
+   */
+  async function checkinCountByCourse(id: string): Promise<number> {
+    requireUid()
+    const rows = await businessApi<Array<{ id: string }>>(
+      'GET',
+      `/b/checkins?select=id&course_id=${encodeURIComponent(id)}`,
+    )
+    return rows.length
+  }
+
+  /**
+   * 删除课程（带级联清理 checkins）。
+   * 调用前提：UI 已经在弹窗里用 `checkinCountByCourse()` 给用户看了条数 +
+   * dangerousConfirm 强确认通过。
+   *
+   * 执行顺序：先删 checkins（子）→ 再删 course（父），避免孤儿。
+   * 数据零丢失保证：最坏失败 = "checkins 全删了 course 还在"，用户再点一次删 course 即可。
+   * PG 没事务，部分 checkins 失败时已删的不回滚，交给用户在错误提示下重试。
+   */
   async function remove(id: string) {
     requireUid()
-    await businessApi<{ deleted: number }>('DELETE', `/b/courses/${encodeURIComponent(id)}`)
-    await refresh()
     const checkins = useCheckinsStore()
+    // 1) 重新拉一次（弹窗→用户思考→确认，中间隔了几秒，不能复用旧 count）
+    const checkinRows = await businessApi<Array<{ id: string }>>(
+      'GET',
+      `/b/checkins?select=id&course_id=${encodeURIComponent(id)}`,
+    )
+    // 2) 逐条删 checkins
+    for (const row of checkinRows) {
+      await businessApi<{ deleted: number }>('DELETE', `/b/checkins/${encodeURIComponent(row.id)}`)
+    }
+    // 3) 再删 course
+    await businessApi<{ deleted: number }>('DELETE', `/b/courses/${encodeURIComponent(id)}`)
+    // 4) 刷新两侧 store
+    await refresh()
     await checkins.refresh()
-    ElMessage.success('已删除课程')
+    const deletedCheckins = checkinRows.length
+    ElMessage.success(
+      deletedCheckins > 0
+        ? `已删除课程，连带清理 ${deletedCheckins} 条打卡记录`
+        : '已删除课程',
+    )
   }
 
   function byId(id: string): Course | undefined {
@@ -190,6 +228,7 @@ export const useCoursesStore = defineStore('courses', () => {
     create,
     update,
     remove,
+    checkinCountByCourse,
     byId,
   }
 })

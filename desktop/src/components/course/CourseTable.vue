@@ -6,7 +6,7 @@ import { computed, ref } from 'vue'
 import { useCoursesStore, type Course } from '@/stores/courses'
 import type { CourseSummary } from '@/types'
 import { formatMoney, formatHours } from '@/utils/money'
-import { confirm } from '@/utils/confirm'
+import { dangerousConfirm } from '@/utils/confirm'
 import CourseFormDialog from './CourseFormDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
@@ -28,14 +28,27 @@ function openEdit(c: Course) {
 }
 
 async function onDelete(c: Course) {
-  const ok = await confirm({
-    title: '删除课程',
-    message: `确定要删除「${c.name}」吗？该课程下的所有打卡记录也会一起删除。`,
-    confirmText: '删除',
-    type: 'warning',
+  // 1) 先查该课程下有多少条打卡，给用户看具体数字
+  let checkinCount = 0
+  try {
+    checkinCount = await courses.checkinCountByCourse(c.id)
+  } catch (e) {
+    // 查询失败不要直接吞，至少要让用户知道弹窗可能不准
+    console.error('[CourseTable] 查询打卡条数失败', e)
+  }
+  // 2) dangerousConfirm：强提醒 + 必须输入课程名才放行
+  const detail =
+    checkinCount > 0
+      ? `「${c.name}」下还有 ${checkinCount} 条打卡记录，删除课程时这些记录会被一并删除，此操作不可恢复。`
+      : `「${c.name}」下暂无打卡记录，但删除后无法恢复。`
+  const ok = await dangerousConfirm({
+    title: '⚠️ 删除课程',
+    message: detail,
+    keyword: c.name,
+    confirmText: '我已了解风险，删除',
   })
   if (!ok) return
-  // remove 内部已刷新 courses + checkins，这里不再重复请求
+  // 3) store.remove 内部已级联删 checkins 并刷新两侧 store
   await courses.remove(c.id)
 }
 

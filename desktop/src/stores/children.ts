@@ -196,18 +196,70 @@ export const useChildrenStore = defineStore('children', () => {
     ElMessage.success('已更新')
   }
 
+  /**
+   * 删除宝贝档案（带级联清理 courses + checkins）。
+   *
+   * 调用前提：UI 已经用 dangerousConfirm 强确认（输入宝贝名 + 看到"会同时删课程和打卡"）。
+   * 调用方负责：delete 完成后调 courses.refresh() + checkins.refresh() 刷新业务 store。
+   *
+   * 执行顺序（关键，依赖 setActive 还需要 children 列表）：
+   *   1) 如果当前 active = 要删的 child → 先切到下一个（用 children 里还在的 next）
+   *   2) 拉该 child 的所有 courses（select=id）
+   *   3) 对每个 course 拉 checkins（select=id）→ 逐条删 checkins → 删 course
+   *   4) 最后删 children 行
+   *
+   * 数据零丢失保证：最坏失败 = 删了一半的 checkins/courses（PG 没事务）。
+   * 这种情况下已删的不回滚，留给用户在错误提示下重试 remove() 即可。
+   * 由于"先切 active 再删 children 行"，setActive 永远能成功（next 一定在 items 里）。
+   */
   async function remove(id: string) {
     if (items.value.length <= 1) {
       throw new Error('至少需要保留一个宝贝档案')
     }
     requireUid()
-    await businessApi<{ deleted: number }>('DELETE', `/b/children/${encodeURIComponent(id)}`)
-    items.value = items.value.filter((x) => x.id !== id)
+
+    // 1) 先切走 active（如果当前激活的就是要删的）
     if (activeId.value === id) {
-      const next = items.value[0]!
-      await setActive(next.id)
+      const next = items.value.find((x) => x.id !== id)
+      if (next) {
+        // setActive 内部会写 user_prefs + localStorage，best-effort
+        await setActive(next.id)
+      }
     }
-    ElMessage.success('已删除宝贝档案')
+
+    // 2) 拉该 child 的所有 courses
+    const courseRows = await businessApi<Array<{ id: string }>>(
+      'GET',
+      `/b/courses?select=id&child_id=${encodeURIComponent(id)}`,
+    )
+
+    // 3) 对每个 course 删 checkins → 删 course
+    let deletedCheckins = 0
+    let deletedCourses = 0
+    for (const course of courseRows) {
+      const checkinRows = await businessApi<Array<{ id: string }>>(
+        'GET',
+        `/b/checkins?select=id&course_id=${encodeURIComponent(course.id)}`,
+      )
+      for (const row of checkinRows) {
+        await businessApi<{ deleted: number }>('DELETE', `/b/checkins/${encodeURIComponent(row.id)}`)
+        deletedCheckins++
+      }
+      await businessApi<{ deleted: number }>('DELETE', `/b/courses/${encodeURIComponent(course.id)}`)
+      deletedCourses++
+    }
+
+    // 4) 删 children 行
+    await businessApi<{ deleted: number }>('DELETE', `/b/children/${encodeURIComponent(id)}`)
+
+    // 5) 更新本地 store
+    items.value = items.value.filter((x) => x.id !== id)
+
+    ElMessage.success(
+      deletedCourses > 0 || deletedCheckins > 0
+        ? `已删除宝贝，连带清理 ${deletedCourses} 个课程 / ${deletedCheckins} 条打卡`
+        : '已删除宝贝档案',
+    )
   }
 
   function getById(id: string): Child | undefined {

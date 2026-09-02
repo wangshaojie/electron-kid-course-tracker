@@ -47,14 +47,15 @@ async function onDelete(c: Child) {
     ElMessage.warning('至少需要保留一个宝贝档案')
     return
   }
+  // 强提示：必须输入宝贝名才放行；与课程级 dangerousConfirm 一致的二次保险
   const ok = await dangerousConfirm({
-    title: '删除宝贝档案',
-    message: `将删除「${c.name}」及其所有课程和打卡记录，此操作不可恢复。`,
-    keyword: '删除',
+    title: '⚠️ 删除宝贝档案',
+    message: `将删除「${c.name}」及其名下的所有课程和打卡记录，此操作不可恢复。`,
+    keyword: c.name,
     confirmText: '我已了解风险，删除',
   })
   if (!ok) return
-  // remove 内部会切到下一个宝贝，这里等待其完成后再刷新业务数据
+  // remove 内部已级联删 courses + checkins 并切换 active，这里再补一次业务 store 刷新以防脏数据
   await children.remove(c.id)
   await courses.refresh()
   await checkins.refresh()
