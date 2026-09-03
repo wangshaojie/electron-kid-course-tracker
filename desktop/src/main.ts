@@ -1,7 +1,5 @@
 import { createApp } from 'vue'
 import { createPinia } from 'pinia'
-import ElementPlus from 'element-plus'
-import 'element-plus/dist/index.css'
 import App from './App.vue'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
@@ -23,8 +21,6 @@ async function bootstrap() {
   mark('pinia')
   app.use(router)
   mark('router')
-  app.use(ElementPlus)
-  mark('element-plus')
 
   // 1) 鉴权初始化：尝试从 SDK 持久化的 session 恢复登录态
   const auth = useAuthStore()
@@ -69,7 +65,6 @@ bootstrap().catch((err) => {
     const app = createApp(App)
     app.use(createPinia())
     app.use(router)
-    app.use(ElementPlus)
     app.mount('#app')
   } catch (e2) {
     console.error('[main] fallback mount also failed:', e2)

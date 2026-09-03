@@ -13,6 +13,7 @@
  */
 import { ref, computed, watch, onUnmounted, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
+import { CircleCheckFilled } from '@element-plus/icons-vue'
 import { useAuthStore } from '@/stores/auth'
 import { isValidEmail } from '@/utils/email'
 
@@ -262,14 +263,14 @@ async function onSubmit() {
 .forgot-pw-steps { margin: 4px 0 16px; }
 .forgot-pw-body { min-height: 240px; }
 .forgot-pw-body :deep(.el-form-item) { margin-bottom: 14px; }
-.hint { color: #6b7280; font-size: 13px; margin: 0 0 16px; }
+.hint { color: rgba(255,255,255,0.55); font-size: 13px; margin: 0 0 16px; }
 .code-row { display: flex; gap: 8px; width: 100%; }
 .code-input { flex: 1; }
 .send-btn { flex-shrink: 0; width: 130px; }
 .submit { width: 100%; margin-top: 8px; font-size: 16px; font-weight: 500; }
 .forgot-pw-actions { display: flex; gap: 12px; margin-top: 8px; }
 .forgot-pw-actions .submit { flex: 1; margin-top: 0; }
-.pw-error { margin: -6px 0 10px; font-size: 12px; color: #f56c6c; }
+.pw-error { margin: -6px 0 10px; font-size: 12px; color: #FF7A7A; }
 
 .forgot-pw-success {
   display: flex;
@@ -278,6 +279,6 @@ async function onSubmit() {
   gap: 8px;
   padding: 32px 0;
 }
-.success-text { color: #1f2937; font-size: 18px; font-weight: 600; margin: 0; }
-.success-hint { color: #6b7280; font-size: 13px; margin: 0; }
+.success-text { color: #fff; font-size: 18px; font-weight: 600; margin: 0; }
+.success-hint { color: rgba(255,255,255,0.55); font-size: 13px; margin: 0; }
 </style>

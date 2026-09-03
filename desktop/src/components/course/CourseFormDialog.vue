@@ -108,6 +108,7 @@ async function onSubmit() {
     width="540"
     align-center
     :close-on-click-modal="false"
+    append-to-body
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="88" label-position="right">
@@ -127,7 +128,7 @@ async function onSubmit() {
             class="w-full"
             controls-position="right"
           />
-          <span class="ml-2 text-xs text-ink-ghost">元</span>
+          <span class="ml-2 text-xs" style="color: rgba(255,255,255,0.4);">元</span>
         </el-form-item>
         <el-form-item label="购买课时" prop="total_hours">
           <el-input-number
@@ -138,7 +139,7 @@ async function onSubmit() {
             class="w-full"
             controls-position="right"
           />
-          <span class="ml-2 text-xs text-ink-ghost">节</span>
+          <span class="ml-2 text-xs" style="color: rgba(255,255,255,0.4);">节</span>
         </el-form-item>
       </div>
       <div class="grid grid-cols-2 gap-4">

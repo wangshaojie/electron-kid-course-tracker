@@ -1,6 +1,6 @@
 {
   "name": "course-tracker",
-  "version": "0.4.1",
+  "version": "0.4.2",
   "private": true,
   "description": "一寸光阴 —— 家长自用的孩子课外培训班课程 / 缴费 / 打卡 / 课时统计工具",
   "main": "dist-electron/main.mjs",
@@ -22,6 +22,7 @@
   },
   "dependencies": {
     "@cloudbase/js-sdk": "^3.7.1",
+    "@element-plus/icons-vue": "^2.3.1",
     "echarts": "^5.5.1",
     "element-plus": "^2.8.6",
     "exceljs": "^4.4.0",
@@ -41,6 +42,8 @@
     "postcss": "^8.4.47",
     "tailwindcss": "^3.4.14",
     "typescript": "^5.6.3",
+    "unplugin-auto-import": "^21.1.0",
+    "unplugin-vue-components": "^32.1.0",
     "vite": "^5.4.10",
     "vue-tsc": "^2.1.10",
     "wait-on": "^8.0.5"

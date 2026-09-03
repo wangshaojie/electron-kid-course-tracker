@@ -94,6 +94,7 @@ async function onSubmit() {
     width="500"
     align-center
     :close-on-click-modal="false"
+    append-to-body
     @update:model-value="(v: boolean) => emit('update:modelValue', v)"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="80">
@@ -112,10 +113,14 @@ async function onSubmit() {
           />
         </el-select>
       </el-form-item>
-      <div v-if="selectedSummary" class="mb-3 -mt-1 rounded-lg bg-brand-50/50 px-3 py-2 text-xs text-ink-soft">
+      <div
+        v-if="selectedSummary"
+        class="mb-3 -mt-1 rounded-lg px-3 py-2 text-xs"
+        style="background: rgba(63,184,122,0.08); border: 1px solid rgba(63,184,122,0.18); color: rgba(255,255,255,0.7);"
+      >
         <span>已用 {{ selectedSummary.used_hours }} / {{ selectedSummary.total_hours }} 节</span>
-        <span class="mx-2">·</span>
-        <span :class="selectedSummary.status === 'low' ? 'text-sun-500 font-semibold' : ''">
+        <span class="mx-2" style="color: rgba(255,255,255,0.3);">·</span>
+        <span :style="selectedSummary.status === 'low' ? 'color: #FFB347; font-weight: 600;' : ''">
           剩 {{ selectedSummary.remain_hours }} 节
         </span>
       </div>

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 宝贝切换器 —— 侧栏顶部的下拉
+ * 宝贝切换器 —— 侧栏顶部的下拉（暗色玻璃风）
  *  显示当前宝贝的头像 + 名字，点击展开下拉（切宝贝 / 管理档案）
  */
 import { computed, ref, onBeforeUnmount } from 'vue'
@@ -39,7 +39,6 @@ function gotoSettings() {
   void router.push('/settings')
 }
 
-// 点外面自动关
 function onDocClick(e: MouseEvent) {
   const target = e.target as HTMLElement | null
   if (!target) return
@@ -56,28 +55,29 @@ if (typeof window !== 'undefined') {
   <div v-if="current" data-child-switcher class="relative">
     <button
       type="button"
-      class="flex w-full items-center gap-3 rounded-xl bg-white/70 px-3 py-2.5 text-left transition-colors hover:bg-white"
+      class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
+      style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);"
       @click.stop="toggle"
     >
       <div
-        class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-2xl shadow-soft"
+        class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-full text-2xl"
         :style="{ background: current.color + '22', border: `2px solid ${current.color}` }"
       >
         {{ current.emoji }}
       </div>
       <div class="min-w-0 flex-1">
-        <p class="truncate font-bold text-ink">{{ current.name }}</p>
-        <p class="text-xs text-ink-soft">
+        <p class="truncate font-bold" style="color: #fff;">{{ current.name }}</p>
+        <p class="text-xs" style="color: rgba(255,255,255,0.5);">
           {{ children.count > 1 ? `${children.count} 个宝贝 · 切换` : '点击管理' }}
         </p>
       </div>
       <span
-        class="text-ink-ghost text-xs transition-transform"
+        class="text-xs transition-transform"
+        style="color: rgba(255,255,255,0.5);"
         :class="{ 'rotate-180': open }"
       >▾</span>
     </button>
 
-    <!-- 下拉 -->
     <transition
       enter-active-class="transition duration-150 ease-out"
       enter-from-class="opacity-0 -translate-y-1"
@@ -88,12 +88,14 @@ if (typeof window !== 'undefined') {
     >
       <div
         v-if="open"
-        class="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl border border-brand-100 bg-white py-1 shadow-warm"
+        class="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl py-1"
+        style="background: #1a1f2e; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 24px rgba(0,0,0,0.4);"
         @click.stop
       >
         <p
           v-if="children.count > 1"
-          class="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider text-ink-ghost"
+          class="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider"
+          style="color: rgba(255,255,255,0.4);"
         >
           切换宝贝
         </p>
@@ -103,8 +105,10 @@ if (typeof window !== 'undefined') {
           type="button"
           :class="[
             'mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors',
-            c.id === children.activeId ? 'bg-moss-50' : 'hover:bg-moss-50/50',
           ]"
+          :style="c.id === children.activeId
+            ? { background: 'rgba(63,184,122,0.15)', color: '#fff' }
+            : { color: 'rgba(255,255,255,0.85)' }"
           @click="pick(c.id)"
         >
           <div
@@ -114,19 +118,20 @@ if (typeof window !== 'undefined') {
             {{ c.emoji }}
           </div>
           <span class="flex-1 truncate">{{ c.name }}</span>
-          <span v-if="c.id === children.activeId" class="text-moss-500">✓</span>
+          <span v-if="c.id === children.activeId" style="color: #5FCE89;">✓</span>
         </button>
 
-        <div class="my-1 mx-2 border-t border-moss-50"></div>
+        <div class="my-1 mx-2" style="border-top: 1px solid rgba(255,255,255,0.06);"></div>
 
         <button
           type="button"
-          class="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm text-ink-soft transition-colors hover:bg-moss-50/50"
+          class="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors"
+          style="color: rgba(255,255,255,0.7);"
           @click="gotoSettings"
         >
           <span class="text-base">⚙️</span>
           <span class="flex-1">管理宝贝档案</span>
-          <span class="text-xs">→</span>
+          <span class="text-xs" style="color: rgba(255,255,255,0.4);">→</span>
         </button>
       </div>
     </transition>

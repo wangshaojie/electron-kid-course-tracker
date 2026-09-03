@@ -112,9 +112,9 @@ function onForgotSuccess() {
 <template>
   <div class="card-base">
     <div class="mb-3">
-      <h3 class="font-bold text-ink">🔐 账号安全</h3>
-      <p class="mt-0.5 text-sm text-ink-soft">
-        当前登录：<b class="text-moss-600">{{ maskedEmail }}</b>
+      <h3 class="font-bold" style="color: #fff;">🔐 账号安全</h3>
+      <p class="mt-0.5 text-sm" style="color: rgba(255,255,255,0.6);">
+        当前登录：<b style="color: #5FCE89;">{{ maskedEmail }}</b>
       </p>
     </div>
 
@@ -198,7 +198,7 @@ function onForgotSuccess() {
 }
 .pw-label {
   font-size: 14px;
-  color: #4b5563;
+  color: rgba(255,255,255,0.75);
   flex-shrink: 0;
 }
 .pw-status {
@@ -208,19 +208,19 @@ function onForgotSuccess() {
   white-space: nowrap;
 }
 .pw-status--ok {
-  color: #3FB87A;
-  background: #F0FDF4;
-  border: 1px solid #BBF7D0;
+  color: #5FCE89;
+  background: rgba(63,184,122,0.12);
+  border: 1px solid rgba(63,184,122,0.3);
 }
 .pw-status--off {
-  color: #E08A1E;
-  background: #FEF3C7;
-  border: 1px solid #FDE68A;
+  color: #FFB347;
+  background: rgba(224,138,30,0.1);
+  border: 1px solid rgba(224,138,30,0.3);
 }
 .pw-status--err {
-  color: #dc2626;
-  background: #FEF2F2;
-  border: 1px solid #FECACA;
+  color: #FF7A7A;
+  background: rgba(217,69,69,0.1);
+  border: 1px solid rgba(217,69,69,0.3);
 }
 .pw-actions {
   display: flex;
@@ -230,15 +230,15 @@ function onForgotSuccess() {
 .pw-hint {
   margin-top: 8px;
   font-size: 11px;
-  color: #9ca3af;
+  color: rgba(255,255,255,0.35);
 }
 .pw-migrate {
   margin: 8px 0 0;
   padding: 8px 12px;
   font-size: 12px;
-  color: #92400e;
-  background: #FEF3C7;
-  border: 1px solid #FDE68A;
+  color: #FFB347;
+  background: rgba(224,138,30,0.08);
+  border: 1px solid rgba(224,138,30,0.25);
   border-radius: 6px;
   line-height: 1.5;
 }

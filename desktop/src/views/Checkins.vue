@@ -1,9 +1,6 @@
 <script setup lang="ts">
 /**
- * 上课记录 —— 日历 / 列表 双视图
- * 日历：左月历（每天内嵌课程胶囊）+ 右选中日打卡详情
- * 列表：打卡记录表（可按课程 / 时间筛选）
- * 右上角按钮在两种视图间切换
+ * 上课记录 —— 日历 / 列表 双视图（暗色玻璃版）
  */
 import { computed, ref } from 'vue'
 import { useCheckinsStore } from '@/stores/checkins'
@@ -22,13 +19,12 @@ const children = useChildrenStore()
 
 const now = new Date()
 const year = ref(now.getFullYear())
-const month = ref(now.getMonth() + 1) // 1-12
+const month = ref(now.getMonth() + 1)
 const selectedDate = ref(todayStr())
 
 const checkinDialogOpen = ref(false)
 const dialogDate = ref(todayStr())
 
-/** 展示模式：calendar 日历 / list 列表 */
 const viewMode = ref<'calendar' | 'list'>('calendar')
 const isCalendar = computed(() => viewMode.value === 'calendar')
 function toggleView() {
@@ -41,9 +37,7 @@ const monthCheckins = computed(() => checkins.items.filter((c) => c.date.startsW
 const monthCount = computed(() => monthCheckins.value.length)
 const monthHours = computed(() => monthCheckins.value.reduce((s, c) => s + Number(c.hours), 0))
 
-const dayList = computed(() =>
-  checkins.items.filter((c) => c.date === selectedDate.value),
-)
+const dayList = computed(() => checkins.items.filter((c) => c.date === selectedDate.value))
 const dayHours = computed(() => dayList.value.reduce((s, c) => s + Number(c.hours), 0))
 
 const dayLabel = computed(() => {
@@ -91,52 +85,59 @@ async function removeCheckin(id: string) {
 </script>
 
 <template>
-  <div class="flex h-full flex-col gap-4 bg-bg p-6">
-    <!-- 没宝贝：引导去设置页创建 -->
+  <div class="flex h-full flex-col gap-4 dark-page p-6">
+    <!-- 没宝贝 -->
     <div
       v-if="children.loaded && children.count === 0"
       class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center text-center"
     >
       <div class="mb-4 text-6xl">🌱</div>
-      <h2 class="mb-2 text-xl font-bold text-ink">还没有宝贝档案</h2>
-      <p class="mb-6 text-sm text-ink-soft">先去「设置」创建一个宝贝，再回来记录上课情况吧。</p>
+      <h2 class="mb-2 text-xl font-bold" style="color: #fff;">还没有宝贝档案</h2>
+      <p class="mb-6 text-sm" style="color: rgba(255,255,255,0.6);">先去「设置」创建一个宝贝，再回来记录上课情况吧。</p>
     </div>
 
     <template v-else>
       <header class="flex items-end justify-between">
         <div>
-          <h1 class="flex items-center gap-2 text-2xl font-bold text-ink">
+          <h1 class="flex items-center gap-2 text-2xl font-bold" style="color: #fff;">
             <span>{{ children.active?.emoji ?? '🗓' }}</span>
             <span v-if="isCalendar">{{ children.active?.name ?? '' }}的打卡日历</span>
             <span v-else>{{ children.active?.name ?? '' }}的打卡记录</span>
           </h1>
-          <p v-if="isCalendar" class="mt-1 text-sm text-ink-soft">
+          <p v-if="isCalendar" class="mt-1 text-sm" style="color: rgba(255,255,255,0.5);">
             本月打卡 {{ monthCount }} 次 · 共 {{ monthHours }} 节，点击日期查看当天详情
           </p>
-          <p v-else class="mt-1 text-sm text-ink-soft">
+          <p v-else class="mt-1 text-sm" style="color: rgba(255,255,255,0.5);">
             共 {{ checkins.items.length }} 条记录，可按课程和时间筛选后直接导出 Excel
           </p>
         </div>
-        <el-button type="primary" plain @click="toggleView">
+        <button class="btn-dark-ghost" @click="toggleView">
           {{ isCalendar ? '📋 列表' : '📅 日历' }}
-        </el-button>
+        </button>
       </header>
 
       <!-- 日历视图 -->
       <div v-if="isCalendar" class="grid min-h-0 flex-1 grid-cols-[minmax(0,1fr)_320px] gap-4">
-        <!-- 左：月历 -->
-        <div class="card-base flex min-h-0 flex-col p-4">
+        <div class="glass-card flex min-h-0 flex-col p-5">
           <div class="mb-3 flex items-center justify-between">
-            <el-button-group>
-              <el-button class="month-nav" @click="prevMonth">‹</el-button>
-              <el-button class="!px-8 font-semibold text-ink">
+            <div class="el-button-group" style="display: inline-flex;">
+              <button class="btn-dark-ghost" style="border-radius: 10px 0 0 10px; padding: 6px 12px;" @click="prevMonth">‹</button>
+              <button
+                class="btn-dark-ghost"
+                style="border-radius: 0; padding: 6px 24px; font-weight: 600; color: #fff; border-left: 0;"
+              >
                 {{ year }} 年 {{ month }} 月
-              </el-button>
-              <el-button class="month-nav" @click="nextMonth">›</el-button>
-            </el-button-group>
-            <el-button size="small" :disabled="selectedDate === todayStr()" @click="goToday">
+              </button>
+              <button class="btn-dark-ghost" style="border-radius: 0 10px 10px 0; padding: 6px 12px; border-left: 0;" @click="nextMonth">›</button>
+            </div>
+            <button
+              class="btn-dark-ghost"
+              :disabled="selectedDate === todayStr()"
+              style="font-size: 12px; padding: 4px 12px;"
+              @click="goToday"
+            >
               回到今天
-            </el-button>
+            </button>
           </div>
           <div class="min-h-0 flex-1">
             <CheckinCalendar
@@ -149,19 +150,17 @@ async function removeCheckin(id: string) {
           </div>
         </div>
 
-        <!-- 右：选中日详情 -->
-        <div class="card-base flex min-h-0 flex-col p-4">
-
+        <div class="glass-card flex min-h-0 flex-col p-5">
           <div class="mb-3 flex items-center justify-between">
             <div>
-              <h3 class="font-bold text-ink">{{ dayLabel }} · {{ weekdayText }}</h3>
-              <p v-if="dayList.length > 0" class="mt-0.5 text-xs text-ink-soft">
+              <h3 class="font-bold" style="color: #fff;">{{ dayLabel }} · {{ weekdayText }}</h3>
+              <p v-if="dayList.length > 0" class="mt-0.5 text-xs" style="color: rgba(255,255,255,0.5);">
                 共 {{ dayList.length }} 次打卡 · {{ dayHours }} 节
               </p>
             </div>
-            <el-button type="primary" plain size="small" @click="openCheckin(selectedDate)">
+            <button class="btn-dark-primary" style="font-size: 12px; padding: 4px 12px;" @click="openCheckin(selectedDate)">
               ＋ 打卡
-            </el-button>
+            </button>
           </div>
 
           <div class="min-h-0 flex-1 overflow-y-auto pr-1">
@@ -170,32 +169,36 @@ async function removeCheckin(id: string) {
               class="flex h-full flex-col items-center justify-center py-10 text-center"
             >
               <div class="mb-2 text-3xl">🌱</div>
-              <p class="text-sm text-ink-soft">这一天还没有打卡</p>
-              <el-button class="mt-3" type="primary" plain size="small" @click="openCheckin(selectedDate)">
+              <p class="text-sm" style="color: rgba(255,255,255,0.5);">这一天还没有打卡</p>
+              <button class="btn-dark-ghost mt-3" style="font-size: 12px; padding: 4px 12px;" @click="openCheckin(selectedDate)">
                 记录一次
-              </el-button>
+              </button>
             </div>
 
             <ul v-else class="space-y-2">
               <li
                 v-for="c in dayList"
                 :key="c.id"
-                class="rounded-lg bg-white p-3 ring-1 ring-brand-100"
+                class="rounded-lg p-3"
+                style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);"
               >
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <p class="flex items-center gap-1.5 text-sm font-medium text-ink">
+                    <p class="flex items-center gap-1.5 text-sm font-medium" style="color: #fff;">
                       <span
                         class="h-2 w-2 shrink-0 rounded-full"
                         :style="{ backgroundColor: courseColorOf(c.course_id).text }"
                       />
                       <span class="truncate">{{ courses.byId(c.course_id)?.name ?? '已删除课程' }}</span>
-                      <span class="shrink-0 rounded bg-brand-50 px-1.5 py-px text-[11px] font-semibold text-brand-600">
+                      <span
+                        class="shrink-0 rounded px-1.5 py-px text-[11px] font-semibold"
+                        style="background: rgba(63,184,122,0.15); color: #5FCE89;"
+                      >
                         -{{ c.hours }} 节
                       </span>
                     </p>
-                    <p v-if="c.feedback" class="mt-1 text-xs text-ink-soft">{{ c.feedback }}</p>
-                    <p v-else class="mt-1 text-xs text-ink-ghost">（无反馈）</p>
+                    <p v-if="c.feedback" class="mt-1 text-xs" style="color: rgba(255,255,255,0.55);">{{ c.feedback }}</p>
+                    <p v-else class="mt-1 text-xs" style="color: rgba(255,255,255,0.3);">（无反馈）</p>
                   </div>
                   <el-button link type="danger" size="small" class="!-mt-1 shrink-0" @click="removeCheckin(c.id)">
                     删除
@@ -208,7 +211,7 @@ async function removeCheckin(id: string) {
       </div>
 
       <!-- 列表视图 -->
-      <div v-else class="card-base min-h-0 flex-1 overflow-y-auto p-4">
+      <div v-else class="glass-card min-h-0 flex-1 overflow-y-auto p-5">
         <CheckinTable />
       </div>
     </template>
@@ -216,10 +219,3 @@ async function removeCheckin(id: string) {
     <CheckinFormDialog v-model="checkinDialogOpen" :preselected-date="dialogDate" />
   </div>
 </template>
-
-<style scoped>
-.month-nav {
-  font-size: 18px;
-  line-height: 1;
-}
-</style>

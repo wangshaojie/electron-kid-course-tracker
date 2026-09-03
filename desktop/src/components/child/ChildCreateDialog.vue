@@ -17,6 +17,8 @@ const props = defineProps<{
 const emit = defineEmits<{
   'update:modelValue': [v: boolean]
   saved: [child: Child]
+  /** 弹窗关闭动画结束后触发，用于父组件清掉残留的编辑目标 */
+  closed: []
 }>()
 
 const children = useChildrenStore()
@@ -53,6 +55,10 @@ watch(
           color: CHILD_COLOR_POOL[Math.floor(Math.random() * CHILD_COLOR_POOL.length)]!,
         }
       }
+    } else {
+      // 关闭后清空表单残留（不依赖父组件的 editingChild 状态机）
+      form.value = { name: '', emoji: '🧒', color: '#3FB87A' }
+      formRef.value?.clearValidate()
     }
   },
 )
@@ -85,6 +91,11 @@ async function onSubmit() {
     submitting.value = false
   }
 }
+
+/** el-dialog 关闭动画结束后的钩子，通知父组件清掉编辑目标 */
+function onClosed() {
+  emit('closed')
+}
 </script>
 
 <template>
@@ -93,8 +104,11 @@ async function onSubmit() {
     :title="isEdit ? '编辑宝贝档案' : (isFirstChild ? '欢迎！先建一个宝贝档案' : '新增宝贝档案')"
     width="500"
     align-center
+    append-to-body
     :close-on-click-modal="!isFirstChild"
     :show-close="!isFirstChild"
+    destroy-on-close
+    @closed="onClosed"
   >
     <el-form ref="formRef" :model="form" :rules="rules" label-width="80">
       <!-- 头像预览 -->

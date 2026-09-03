@@ -1,12 +1,9 @@
 <script setup lang="ts">
 /**
- * 设置
+ * 设置（暗色玻璃版）
  *  - 宝贝档案管理
  *  - 清空指引（云端控制台）
  *  - 软件信息
- *
- * 导出 Excel 已迁移到「上课记录 → 列表」工具栏的「导出」按钮，
- * 按当前筛选（课程 + 时间范围）直接导出，无需再选宝贝/课程。
  */
 import { ref } from 'vue'
 import { useCoursesStore } from '@/stores/courses'
@@ -23,15 +20,22 @@ const children = useChildrenStore()
 
 const createOpen = ref(false)
 const editingChild = ref<Child | null>(null)
+const dialogKey = ref(0)
 
 function openCreate() {
   editingChild.value = null
   createOpen.value = true
+  dialogKey.value++
 }
 
 function openEdit(c: Child) {
   editingChild.value = c
   createOpen.value = true
+  dialogKey.value++
+}
+
+function onDialogClosed() {
+  editingChild.value = null
 }
 
 async function onSetActive(c: Child) {
@@ -47,7 +51,6 @@ async function onDelete(c: Child) {
     ElMessage.warning('至少需要保留一个宝贝档案')
     return
   }
-  // 强提示：必须输入宝贝名才放行；与课程级 dangerousConfirm 一致的二次保险
   const ok = await dangerousConfirm({
     title: '⚠️ 删除宝贝档案',
     message: `将删除「${c.name}」及其名下的所有课程和打卡记录，此操作不可恢复。`,
@@ -55,7 +58,6 @@ async function onDelete(c: Child) {
     confirmText: '我已了解风险，删除',
   })
   if (!ok) return
-  // remove 内部已级联删 courses + checkins 并切换 active，这里再补一次业务 store 刷新以防脏数据
   await children.remove(c.id)
   await courses.refresh()
   await checkins.refresh()
@@ -67,43 +69,57 @@ function onWipe() {
 </script>
 
 <template>
-  <div class="h-full overflow-y-auto bg-bg p-6">
+  <div class="h-full overflow-y-auto dark-page p-6">
     <header class="mb-5">
-      <h1 class="text-2xl font-bold text-ink">设置</h1>
-      <p class="text-sm text-ink-soft">宝贝管理 / 数据备份 / 关于</p>
+      <h1 class="text-2xl font-bold" style="color: #fff;">设置</h1>
+      <p class="text-sm" style="color: rgba(255,255,255,0.5);">宝贝管理 / 数据备份 / 关于</p>
     </header>
 
     <div class="space-y-4">
       <!-- 宝贝档案管理 -->
-      <div class="card-base">
+      <div class="glass-card p-5">
         <div class="mb-3 flex items-center justify-between">
           <div>
-            <h3 class="font-bold text-ink">👶 宝贝档案</h3>
-            <p class="mt-0.5 text-sm text-ink-soft">
-              当前激活：<b class="text-moss-600">{{ children.active?.name }}</b>
+            <h3 class="font-bold" style="color: #fff;">👶 宝贝档案</h3>
+            <p class="mt-0.5 text-sm" style="color: rgba(255,255,255,0.55);">
+              当前激活：<b style="color: #5FCE89;">{{ children.active?.name }}</b>
               ，共 {{ children.count }} 个
             </p>
           </div>
-          <el-button type="primary" @click="openCreate">
+          <button class="btn-dark-primary" @click="openCreate">
             <span class="mr-1">+</span> 新增宝贝
-          </el-button>
+          </button>
         </div>
 
-        <div v-if="children.count === 0" class="py-6 text-center text-sm text-ink-soft">
+        <div
+          v-if="children.count === 0"
+          class="py-6 text-center text-sm"
+          style="color: rgba(255,255,255,0.5);"
+        >
           <p>当前账号下没有宝贝数据</p>
-          <p class="mt-1 text-xs">你之前的录入可能用了别的邮箱，或数据还没拉过来</p>
+          <p class="mt-1 text-xs" style="color: rgba(255,255,255,0.3);">
+            你之前的录入可能用了别的邮箱，或数据还没拉过来
+          </p>
         </div>
 
         <ul v-else class="space-y-2">
           <li
             v-for="c in children.items"
             :key="c.id"
-            :class="[
-              'flex items-center gap-3 rounded-xl border p-3 transition-colors',
-              c.id === children.activeId
-                ? 'border-moss-200 bg-moss-50/50'
-                : 'border-brand-50 hover:bg-moss-50/30',
-            ]"
+            :style="{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '12px',
+              borderRadius: '12px',
+              padding: '12px',
+              border: c.id === children.activeId
+                ? '1px solid rgba(63,184,122,0.35)'
+                : '1px solid rgba(255,255,255,0.06)',
+              background: c.id === children.activeId
+                ? 'rgba(63,184,122,0.06)'
+                : 'rgba(255,255,255,0.02)',
+              transition: 'all 0.15s ease',
+            }"
           >
             <div
               class="flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-full text-2xl"
@@ -112,9 +128,9 @@ function onWipe() {
               {{ c.emoji }}
             </div>
             <div class="flex-1">
-              <p class="font-bold text-ink">{{ c.name }}</p>
-              <p class="text-xs text-ink-soft">
-                <span v-if="c.id === children.activeId" class="text-moss-600">当前激活</span>
+              <p class="font-bold" style="color: #fff;">{{ c.name }}</p>
+              <p class="text-xs" style="color: rgba(255,255,255,0.5);">
+                <span v-if="c.id === children.activeId" style="color: #5FCE89;">当前激活</span>
                 <span v-else>未激活</span>
               </p>
             </div>
@@ -132,30 +148,30 @@ function onWipe() {
             </div>
           </li>
         </ul>
-        <p class="mt-3 text-xs text-ink-ghost">
+        <p class="mt-3 text-xs" style="color: rgba(255,255,255,0.3);">
           删除宝贝会同时删除其所有课程和打卡记录（ON DELETE CASCADE）
         </p>
       </div>
 
-      <!-- 账号安全（密码状态 + 修改/忘记密码入口） -->
+      <!-- 账号安全 -->
       <PasswordStatusCard />
 
       <!-- 数据存储说明 -->
-      <div class="card-base">
-        <h3 class="mb-1 font-bold text-ink">☁️ 数据存储</h3>
-        <p class="mb-1 text-sm text-ink-soft">
+      <div class="glass-card p-5">
+        <h3 class="mb-1 font-bold" style="color: #fff;">☁️ 数据存储</h3>
+        <p class="mb-1 text-sm" style="color: rgba(255,255,255,0.6);">
           所有数据实时保存在云端 CloudBase PostgreSQL，多设备登录看到同一份数据，本地不维护副本。
         </p>
-        <p class="text-xs text-ink-ghost">
+        <p class="text-xs" style="color: rgba(255,255,255,0.4);">
           导出 Excel 请到「上课记录 → 列表」工具栏的「📊 导出 Excel」按钮，按当前筛选直接导出。
           完整数据可到 CloudBase 控制台 → 数据库 手动导出。
         </p>
       </div>
 
       <!-- 清空指引 -->
-      <div class="card-base border border-danger/30">
-        <h3 class="mb-1 font-bold text-danger">🚨 清空所有数据</h3>
-        <p class="mb-3 text-sm text-ink-soft">
+      <div class="glass-card p-5" style="border-color: rgba(217,69,69,0.25);">
+        <h3 class="mb-1 font-bold" style="color: #FF7A7A;">🚨 清空所有数据</h3>
+        <p class="mb-3 text-sm" style="color: rgba(255,255,255,0.6);">
           数据存储在云端，本应用不提供一键清空（防止误删）。如需删除全部数据，请到 CloudBase 控制台操作。
         </p>
         <el-button type="danger" plain @click="onWipe">
@@ -164,28 +180,27 @@ function onWipe() {
       </div>
 
       <!-- 软件信息 -->
-      <div class="card-base">
-        <h3 class="mb-1 font-bold text-ink">ℹ️ 关于</h3>
-        <dl class="grid grid-cols-2 gap-2 text-sm">
-          <dt class="text-ink-soft">软件名称</dt><dd>一寸光阴</dd>
-          <dt class="text-ink-soft">版本</dt><dd>v0.4.0 · 密码为主</dd>
-          <dt class="text-ink-soft">技术栈</dt><dd>Electron + Vue 3 + CloudBase PG + Element Plus + ECharts</dd>
-          <dt class="text-ink-soft">数据位置</dt>
+      <div class="glass-card p-5">
+        <h3 class="mb-1 font-bold" style="color: #fff;">ℹ️ 关于</h3>
+        <dl class="grid grid-cols-2 gap-2 text-sm" style="color: rgba(255,255,255,0.75);">
+          <dt style="color: rgba(255,255,255,0.5);">软件名称</dt><dd>一寸光阴</dd>
+          <dt style="color: rgba(255,255,255,0.5);">版本</dt><dd>v0.4.0 · 暗色玻璃</dd>
+          <dt style="color: rgba(255,255,255,0.5);">技术栈</dt><dd>Electron + Vue 3 + CloudBase PG + Element Plus + ECharts</dd>
+          <dt style="color: rgba(255,255,255,0.5);">数据位置</dt>
           <dd>云端 CloudBase PostgreSQL（多设备同步）</dd>
-          <dt class="text-ink-soft">说明</dt>
+          <dt style="color: rgba(255,255,255,0.5);">说明</dt>
           <dd>需联网，支持 OTP 邮箱验证码登录、多设备登录看到同一份数据</dd>
         </dl>
       </div>
     </div>
 
     <ChildCreateDialog
+      :key="dialogKey"
+      v-if="createOpen"
       v-model="createOpen"
       :child="editingChild"
       @saved="courses.refresh(); checkins.refresh()"
+      @closed="onDialogClosed"
     />
   </div>
 </template>
-
-<style scoped>
-/* no styles */
-</style>

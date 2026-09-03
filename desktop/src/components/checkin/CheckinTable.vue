@@ -1,19 +1,18 @@
 <script setup lang="ts">
 /**
- * 打卡记录表 —— 上课记录「列表」视图
- * 工具栏右侧带「导出 Excel」按钮，按当前筛选（课程 + 日期范围）直接导出
+ * 打卡记录表（暗色玻璃版）—— 上课记录「列表」视图
+ * 工具栏右侧带「导出 Excel」按钮，按当前筛选直接导出
  */
 import { ref, computed } from 'vue'
 import { ElMessage } from 'element-plus'
-import { useCheckinsStore } from '@/stores/checkins'
+import { useCheckinsStore, type Checkin } from '@/stores/checkins'
 import { useCoursesStore, type Course } from '@/stores/courses'
 import { useChildrenStore } from '@/stores/children'
 import { confirm } from '@/utils/confirm'
 import { todayStr, toDateStr } from '@/utils/date'
-import { exportToExcel, type CourseRow } from '@/utils/excel'
+import type { CourseRow } from '@/utils/excel'
 import CheckinFormDialog from './CheckinFormDialog.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
-import type { Checkin } from '@/stores/checkins'
 
 const checkins = useCheckinsStore()
 const courses = useCoursesStore()
@@ -38,7 +37,6 @@ const rows = computed(() => {
 
 const courseName = (id: string) => courses.byId(id)?.name ?? '(已删除)'
 
-/** Course → CourseRow：去掉客户端聚合字段（exportToExcel 内部自己再聚合） */
 function toCourseRow(c: Course): CourseRow {
   return {
     id: c.id,
@@ -65,7 +63,6 @@ async function onDelete(c: Checkin) {
     type: 'warning',
   })
   if (!ok) return
-  // remove 内部已刷新 courses 聚合，这里不再重复请求
   await checkins.remove(c.id)
 }
 
@@ -81,7 +78,6 @@ function applyQuickRange(preset: 'week' | 'month' | 'all') {
   dateRange.value = [toDateStr(from), todayStr()]
 }
 
-/** 拼接筛选条件描述（写入汇总 sheet + 弹窗提示） */
 function buildFilterLabel(): string {
   const parts: string[] = []
   if (filterCourse.value) {
@@ -102,7 +98,6 @@ async function onExport() {
   }
   exporting.value = true
   try {
-    // 选中的课程：单选就用那一门；未选 = 当前宝贝下所有课程
     const pickedCourse = filterCourse.value
       ? courses.byId(filterCourse.value)
       : null
@@ -116,6 +111,8 @@ async function onExport() {
     const childLabel = `「${children.active?.name ?? '宝贝'}」`
     const filterLabel = buildFilterLabel()
 
+    // 动态 import：exceljs 整包 ~900KB，只在用户点导出时按需加载
+    const { exportToExcel } = await import('@/utils/excel')
     const blob = await exportToExcel(pickedCourses, rows.value, {
       childLabel,
       rangeLabel: filterLabel,
@@ -143,7 +140,7 @@ async function onExport() {
 <template>
   <div>
     <div class="mb-4 flex flex-wrap items-center gap-3">
-      <span class="text-sm text-ink-soft">共 {{ rows.length }} 条记录</span>
+      <span class="text-sm" style="color: rgba(255,255,255,0.55);">共 {{ rows.length }} 条记录</span>
       <div class="flex-1" />
       <el-select
         v-model="filterCourse"
@@ -172,17 +169,18 @@ async function onExport() {
         <el-button size="small" @click="applyQuickRange('month')">近 30 天</el-button>
         <el-button size="small" @click="applyQuickRange('all')">全部</el-button>
       </el-button-group>
-      <el-button
-        type="success"
-        :loading="exporting"
+      <button
+        class="btn-dark-ghost"
         :disabled="rows.length === 0"
+        :style="rows.length === 0 ? 'opacity: 0.4; cursor: not-allowed;' : ''"
         @click="onExport"
       >
-        <span class="mr-1">📊</span> 导出 Excel
-      </el-button>
-      <el-button type="primary" @click="dialogOpen = true">
+        <span v-if="!exporting">📊 导出 Excel</span>
+        <span v-else>导出中...</span>
+      </button>
+      <button class="btn-dark-primary" @click="dialogOpen = true">
         <span class="mr-1">+</span> 打卡
-      </el-button>
+      </button>
     </div>
 
     <EmptyState
@@ -196,7 +194,7 @@ async function onExport() {
       <el-table-column prop="date" label="日期" width="120" sortable />
       <el-table-column label="课程" min-width="160">
         <template #default="{ row }">
-          <span class="font-medium text-ink">{{ courseName(row.course_id) }}</span>
+          <span class="font-medium" style="color: #fff;">{{ courseName(row.course_id) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="hours" label="节数" width="80" align="center">
@@ -206,8 +204,8 @@ async function onExport() {
       </el-table-column>
       <el-table-column prop="feedback" label="课堂反馈" min-width="200">
         <template #default="{ row }">
-          <span v-if="row.feedback" class="text-sm text-ink-soft">{{ row.feedback }}</span>
-          <span v-else class="text-xs text-ink-ghost">（无）</span>
+          <span v-if="row.feedback" class="text-sm" style="color: rgba(255,255,255,0.7);">{{ row.feedback }}</span>
+          <span v-else class="text-xs" style="color: rgba(255,255,255,0.3);">（无）</span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="100" fixed="right">

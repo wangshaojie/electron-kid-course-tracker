@@ -4,7 +4,8 @@
  * 结构：每门课程一个 sheet（标题条 + 课程信息卡 + 课时明细表），末尾汇总 sheet。
  * 排版统一：深绿标题条、浅绿信息卡、明细表带边框 + 隔行底色 + 冻结表头。
  */
-import ExcelJS from 'exceljs'
+// 用 type-only 引入：保留类型提示，运行时按需动态 import 整包
+import type ExcelJS from 'exceljs'
 import type { Course } from '@/stores/courses'
 import type { Checkin } from '@/stores/checkins'
 import { formatMoney } from './money'
@@ -67,6 +68,9 @@ export async function exportToExcel(
   checkins: Checkin[],
   meta?: ExportMeta,
 ): Promise<Blob> {
+  // 运行时按需加载：exceljs 整包 ~900KB
+  // 因为外部已经 import('@/utils/excel') 是动态的，所以这个静态 import 只在导出按钮被点击时才执行
+  const ExcelJS = (await import('exceljs')).default
   const wb = new ExcelJS.Workbook()
   wb.creator = 'kid-course-tracker'
   wb.created = new Date()

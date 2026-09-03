@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
- * 主布局：侧栏菜单 + 顶栏 + 内容区
+ * 主布局：侧栏菜单 + 内容区（暗色玻璃风 v2）
  *  v2: 加宝贝切换器 + 首次启动强制建第一个宝贝
  *  v3: 加当前用户 + 登出
+ *  v4: 全暗色玻璃风，匹配 Login 暗色背景
  */
 import { useRoute, useRouter } from 'vue-router'
 import { computed, ref, onMounted, watch } from 'vue'
@@ -12,6 +13,7 @@ import { useChildrenStore } from '@/stores/children'
 import { useAuthStore } from '@/stores/auth'
 import ChildSwitcher from '@/components/child/ChildSwitcher.vue'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
+import BrandLogo from '@/components/brand/BrandLogo.vue'
 
 const route = useRoute()
 const router = useRouter()
@@ -24,25 +26,20 @@ const firstRunDialogOpen = ref(false)
 interface MenuItem {
   path: string
   label: string
-  icon: string
+  icon: string  // SVG path
 }
 
 const menus: MenuItem[] = [
-  { path: '/', label: '首页总览', icon: '🏠' },
-  { path: '/courses', label: '课程管理', icon: '📚' },
-  { path: '/checkins', label: '上课记录', icon: '✅' },
-  { path: '/stats', label: '统计分析', icon: '📈' },
-  { path: '/settings', label: '设置', icon: '⚙️' },
+  { path: '/',         label: '首页总览', icon: 'home' },
+  { path: '/courses',  label: '课程管理', icon: 'book' },
+  { path: '/checkins', label: '上课记录', icon: 'check' },
+  { path: '/stats',    label: '统计分析', icon: 'chart' },
+  { path: '/settings', label: '设置',     icon: 'cog' },
 ]
 
-// 管理员菜单（侧栏底部独立入口，仅 admin 角色可见）
-// 路由守卫二次校验：非 admin 直接访问 /admin 也会被踢回 /
 const isAdmin = computed(() => auth.user?.role === 'admin')
-
 const activePath = computed(() => route.path)
-const isFirstRun = computed(
-  () => db.ready && children.loaded && children.count === 0,
-)
+const isFirstRun = computed(() => db.ready && children.loaded && children.count === 0)
 
 function go(p: string) {
   if (p === route.path) return
@@ -61,7 +58,7 @@ async function handleLogout() {
       cancelButtonText: '取消',
     })
   } catch {
-    return // 用户取消
+    return
   }
   await auth.signOut()
   ElMessage.success('已登出')
@@ -69,13 +66,11 @@ async function handleLogout() {
 }
 
 onMounted(() => {
-  // 兜底：如果 App.vue 还没加载完，1.5s 后仍未就绪则打开首次启动
   setTimeout(() => {
     if (isFirstRun.value) firstRunDialogOpen.value = true
   }, 600)
 })
 
-// children.load() 完成后，如果仍处于首启（loaded=true 且 count=0）就开 dialog
 watch(
   () => children.loaded,
   (loaded) => {
@@ -88,19 +83,21 @@ watch(
   <!-- 首次启动全屏引导（盖住一切） -->
   <div
     v-if="isFirstRun"
-    class="fixed inset-0 z-40 flex flex-col items-center justify-center bg-gradient-to-br from-moss-50 to-cream-DEFAULT p-6"
+    class="fixed inset-0 z-40 flex flex-col items-center justify-center p-6"
+    style="background: #0a0e1a; color: #fff;"
   >
     <div class="max-w-md text-center">
-      <div class="mb-6 text-7xl animate-bounce">🌱</div>
-      <h1 class="mb-3 font-display text-3xl font-extrabold text-ink">
+      <div class="mb-6 text-7xl">🌱</div>
+      <h1 class="mb-3 text-3xl font-extrabold" style="color: #fff;">
         欢迎使用《一寸光阴》
       </h1>
-      <p class="mb-8 text-base text-ink-soft">
+      <p class="mb-8 text-base" style="color: rgba(255,255,255,0.65);">
         先建一个宝贝档案<br />可以为家里多个宝贝分别记录
       </p>
       <button
         type="button"
-        class="btn-press rounded-full bg-moss-500 px-8 py-3 font-display text-lg font-bold text-white shadow-moss hover:bg-moss-600"
+        class="btn-dark-primary"
+        style="padding: 12px 24px; font-size: 16px;"
         @click="firstRunDialogOpen = true"
       >
         ➕ 创建第一个宝贝
@@ -108,24 +105,18 @@ watch(
     </div>
   </div>
 
-  <!-- 正常布局（首次启动时也渲染但被遮罩挡住；保证 ChildSwitcher 等组件挂载稳定） -->
   <div
     v-show="!isFirstRun"
-    class="flex h-full w-full bg-bg"
+    class="flex h-full w-full dark-page"
   >
-    <!-- 侧栏 -->
-    <aside
-      class="flex w-60 flex-col border-r border-brand-100 bg-white"
-    >
-      <div class="flex items-center gap-3 px-5 py-4">
-        <div
-          class="flex h-10 w-10 items-center justify-center rounded-xl bg-moss-400 text-2xl text-white shadow-soft"
-        >
-          📚
-        </div>
+    <!-- 侧栏：暗色玻璃 -->
+    <aside class="glass-aside flex w-60 flex-col">
+      <!-- 品牌区 -->
+      <div class="flex items-center gap-3 px-5 py-5">
+        <BrandLogo :size="40" />
         <div>
-          <p class="font-bold text-ink">一寸光阴</p>
-          <p class="text-xs text-ink-soft">云端同步</p>
+          <p class="font-bold" style="color: #fff;">一寸光阴</p>
+          <p class="text-xs" style="color: rgba(255,255,255,0.45);">云端同步</p>
         </div>
       </div>
 
@@ -134,30 +125,42 @@ watch(
         <ChildSwitcher />
       </div>
 
+      <!-- 导航 -->
       <nav class="flex-1 px-3 py-2">
         <button
           v-for="m in menus"
           :key="m.path"
           type="button"
           :class="[
-            'btn-press mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-colors',
+            'btn-press mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all',
             activePath === m.path
-              ? 'bg-moss-50 text-moss-600'
-              : 'text-ink-soft hover:bg-moss-50/50 hover:text-ink',
+              ? 'text-white'
+              : 'text-white/55 hover:text-white/85',
           ]"
+          :style="activePath === m.path ? {
+            background: 'linear-gradient(135deg, rgba(63,184,122,0.18) 0%, rgba(63,184,122,0.08) 100%)',
+            border: '1px solid rgba(63,184,122,0.25)',
+            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
+          } : { border: '1px solid transparent' }"
           @click="go(m.path)"
         >
-          <span class="text-lg">{{ m.icon }}</span>
+          <span class="flex h-5 w-5 items-center justify-center" v-html="iconSvg(m.icon)" />
           <span>{{ m.label }}</span>
         </button>
       </nav>
 
-      <div class="border-t border-moss-50 px-5 py-3 text-xs text-ink-ghost">
+      <!-- 底部：用户 + 登出 -->
+      <div class="border-t px-4 py-3 text-xs" style="border-color: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55);">
         <div v-if="auth.user" class="mb-2 flex items-center gap-2">
-          <div class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full bg-moss-100 text-xs font-bold text-moss-700">
+          <div
+            class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold"
+            style="background: rgba(63,184,122,0.2); color: #5FCE89;"
+          >
             {{ (auth.user.email ?? auth.user.uid).slice(0, 1).toUpperCase() }}
           </div>
-          <span class="truncate" :title="auth.user.email ?? auth.user.uid">{{ auth.user.email ?? auth.user.uid }}</span>
+          <span class="truncate" :title="auth.user.email ?? auth.user.uid">
+            {{ auth.user.email ?? auth.user.uid }}
+          </span>
         </div>
         <button
           v-if="isAdmin"
@@ -165,22 +168,26 @@ watch(
           :class="[
             'btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs',
             activePath === '/admin'
-              ? 'bg-moss-100 text-moss-700 font-semibold'
-              : 'text-moss-600 hover:bg-moss-50',
+              ? 'font-semibold'
+              : 'hover:text-white',
           ]"
+          :style="activePath === '/admin' ? {
+            background: 'rgba(63,184,122,0.2)',
+            color: '#5FCE89',
+          } : { color: 'rgba(95,206,137,0.7)' }"
           @click="go('/admin')"
         >
           🛡 管理员后台
         </button>
         <button
           type="button"
-          class="btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs text-ink-soft hover:bg-moss-50 hover:text-moss-600"
+          class="btn-press w-full rounded-md px-2 py-1.5 text-left text-xs hover:text-white"
+          style="color: rgba(255,255,255,0.55);"
           @click="handleLogout"
         >
           🚪 登出
         </button>
-        <p class="mt-1.5 text-[10px] text-ink-ghost">v0.2.0 · 多宝贝支持</p>
-        <p class="mt-0.5 truncate" :title="db.dbPath">{{ db.dbPath || '—' }}</p>
+        <p class="mt-1.5 text-[10px]" style="color: rgba(255,255,255,0.25);">v0.4.0 · 暗色玻璃</p>
       </div>
     </aside>
 
@@ -190,7 +197,7 @@ watch(
     </main>
   </div>
 
-  <!-- 首次启动弹窗 —— 必须在最顶层（z-50），且不在 v-else 内，否则首启时根本不渲染 -->
+  <!-- 首次启动弹窗 -->
   <ChildCreateDialog
     v-if="isFirstRun"
     v-model="firstRunDialogOpen"
@@ -198,6 +205,20 @@ watch(
     @saved="onFirstChildCreated"
   />
 </template>
+
+<script lang="ts">
+/** 内联 SVG 图标（heroicons-style, 24x24） */
+const ICONS: Record<string, string> = {
+  home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2v-9z"/></svg>',
+  book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h12"/></svg>',
+  check: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M9 11l3 3L22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M7 14l4-4 4 4 5-5"/></svg>',
+  cog: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.8l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.8-.3 1.7 1.7 0 0 0-1 1.5V21a2 2 0 1 1-4 0v-.1a1.7 1.7 0 0 0-1-1.5 1.7 1.7 0 0 0-1.8.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.8 1.7 1.7 0 0 0-1.5-1H3a2 2 0 1 1 0-4h.1a1.7 1.7 0 0 0 1.5-1 1.7 1.7 0 0 0-.3-1.8l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.8.3h0a1.7 1.7 0 0 0 1-1.5V3a2 2 0 1 1 4 0v.1a1.7 1.7 0 0 0 1 1.5 1.7 1.7 0 0 0 1.8-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.8v0a1.7 1.7 0 0 0 1.5 1H21a2 2 0 1 1 0 4h-.1a1.7 1.7 0 0 0-1.5 1z"/></svg>',
+}
+export function iconSvg(name: string): string {
+  return ICONS[name] ?? ''
+}
+</script>
 
 <style scoped>
 .btn-press {

@@ -1,23 +1,17 @@
 /**
- * lib/cloudbase.ts —— CloudBase SDK 初始化（自建 OTP + PG 模式）
+ * lib/cloudbase.ts —— 自建 JWT + HTTP Function 入口
+ *
+ * v0.5+ 变更：业务读写全部走 data-api HTTP Function，PG 用 service role 直连；
+ * 前端不再需要 `@cloudbase/js-sdk`。这里只保留自建 JWT、OTP / 密码 / 业务 API 等 fetch 封装。
  *
  * 关键点：
  *  - 自建 OTP 走 HTTP Function `auth-otp`（Resend 发邮件 + 我们的 PG 表存码 + 自签 JWT）
- *  - 业务数据走 `app.rdb().from(table)` —— 必须指定 schema = 'public'
- *  - 鉴权靠 `authJwt` 存到 localStorage（cloud function /verify 签发的）
+ *  - 业务数据走 `businessApi` → `data-api` HTTP Function
+ *  - 鉴权靠自签 JWT 存到 localStorage / sessionStorage
  *  - CloudBase 自带的 `auth.signInWithOtp` 完全不用了
- *
- * 业务 store 直接 import 这里导出的 `app`、`db`、`authJwt`：
- *   - `app`：云函数调用（`app.callFunction`）和 rdb（`app.rdb`）
- *   - `db`：`app.rdb({ database: 'public' })`，业务 CRUD 入口
- *   - `authJwt`：自己签的 JWT，存到 localStorage；后续 PG 操作不需要再带（PG 用 secret key 走的 service role 路径）
  */
 
-import cloudbase from '@cloudbase/js-sdk'
-
 const envId = import.meta.env.VITE_CLOUDBASE_ENV_ID as string
-const region = (import.meta.env.VITE_CLOUDBASE_REGION as string) || 'ap-shanghai'
-const accessKey = import.meta.env.VITE_CLOUDBASE_ACCESS_KEY as string
 const authOtpUrl = (import.meta.env.VITE_AUTH_OTP_URL as string) ||
   `https://${envId}.service.tcloudbase.com/auth-otp`
 const dataApiUrl = (import.meta.env.VITE_DATA_API_URL as string) ||
@@ -26,18 +20,6 @@ const dataApiUrl = (import.meta.env.VITE_DATA_API_URL as string) ||
 if (!envId) {
   throw new Error('VITE_CLOUDBASE_ENV_ID 未设置（.env.development）')
 }
-if (!accessKey || accessKey === '__FILL_PUBLISHABLE_KEY__') {
-  console.warn('[cloudbase] VITE_CLOUDBASE_ACCESS_KEY 仍是占位符；现在因为我们走自建 JWT，business 数据走 cloud function，publishable key 仅供 SDK 初始化')
-}
-
-export const app = cloudbase.init({
-  env: envId,
-  region,
-  accessKey,
-})
-
-/** rdb 必须指定 schema='public'，否则 PostgREST 报 PGRST106 */
-export const db = app.rdb({ database: 'public' })
 
 /** auth-otp HTTP function 根 URL */
 export const AUTH_OTP_URL = authOtpUrl

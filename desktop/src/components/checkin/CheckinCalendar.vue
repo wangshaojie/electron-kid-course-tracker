@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * 月历组件 —— 打卡日历网格
+ * 月历组件 —— 打卡日历网格（暗色玻璃版）
  * 周一开头、42 格；每格显示日期 + 当天打卡课程胶囊（最多 2 个 + N）
  */
 import { computed } from 'vue'
@@ -36,7 +36,7 @@ const today = todayStr()
 
 const grid = computed<DayCell[]>(() => {
   const first = new Date(props.year, props.month - 1, 1)
-  const startOffset = (first.getDay() + 6) % 7 // 周一 = 0
+  const startOffset = (first.getDay() + 6) % 7
   const cells: DayCell[] = []
   for (let i = 0; i < 42; i++) {
     const d = new Date(props.year, props.month - 1, 1 - startOffset + i)
@@ -70,7 +70,6 @@ function courseName(cid: string): string {
   return courses.byId(cid)?.name ?? '已删除课程'
 }
 
-/** 按课程聚合当天打卡（同课程多条合并课时） */
 interface DayAgg {
   course_id: string
   hours: number
@@ -92,35 +91,59 @@ function dayAggs(date: string): DayAgg[] {
   return [...m.values()]
 }
 
-function dayClass(c: DayCell): string {
-  const base =
-    'relative flex min-h-[56px] cursor-pointer flex-col rounded-lg border p-1 text-left transition-colors duration-100 focus:outline-none'
-  const border = c.isSelected
-    ? 'border-brand-400'
-    : dayCheckins(c.date).length > 0
-      ? 'border-brand-200'
-      : 'border-transparent'
-  const bg = c.isSelected
-    ? 'bg-brand-50'
-    : dayCheckins(c.date).length > 0
-      ? 'bg-brand-50/70'
-      : 'bg-white hover:bg-brand-50/40'
-  const shadow = c.isSelected ? 'ring-2 ring-brand-400/70' : ''
-  return `${base} ${border} ${bg} ${shadow}`
+function dayCellStyle(c: DayCell): Record<string, string> {
+  const has = dayCheckins(c.date).length > 0
+  if (c.isSelected) {
+    return {
+      background: 'linear-gradient(135deg, rgba(63,184,122,0.18) 0%, rgba(63,184,122,0.06) 100%)',
+      border: '1px solid rgba(63,184,122,0.5)',
+      boxShadow: '0 0 0 2px rgba(63,184,122,0.25)',
+    }
+  }
+  if (has) {
+    return {
+      background: 'rgba(63,184,122,0.06)',
+      border: '1px solid rgba(63,184,122,0.18)',
+    }
+  }
+  return {
+    background: 'rgba(255,255,255,0.02)',
+    border: '1px solid rgba(255,255,255,0.04)',
+  }
 }
 
-function dayNumClass(c: DayCell): string {
+function dayNumStyle(c: DayCell): Record<string, string> {
   if (c.isToday) {
-    return 'inline-flex h-5 w-5 items-center justify-center rounded-full bg-brand-400 text-[11px] font-bold text-white'
+    return {
+      display: 'inline-flex',
+      width: '20px',
+      height: '20px',
+      alignItems: 'center',
+      justifyContent: 'center',
+      borderRadius: '50%',
+      background: 'linear-gradient(135deg, #5FCE89 0%, #3FB87A 100%)',
+      color: '#0a0e1a',
+      fontSize: '11px',
+      fontWeight: '700',
+    }
   }
-  return `text-[12px] font-medium ${c.inMonth ? 'text-ink' : 'text-ink-ghost/60'}`
+  return {
+    fontSize: '12px',
+    fontWeight: '500',
+    color: c.inMonth ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.2)',
+  }
 }
 </script>
 
 <template>
   <div class="flex h-full flex-col">
     <div class="mb-1 grid grid-cols-7 gap-1">
-      <div v-for="w in WEEK_HEADS" :key="w" class="py-1 text-center text-xs font-medium text-ink-ghost">
+      <div
+        v-for="w in WEEK_HEADS"
+        :key="w"
+        class="py-1 text-center text-xs font-medium"
+        style="color: rgba(255,255,255,0.4);"
+      >
         周{{ w }}
       </div>
     </div>
@@ -129,10 +152,20 @@ function dayNumClass(c: DayCell): string {
         v-for="c in grid"
         :key="c.date"
         type="button"
-        :class="dayClass(c)"
+        :style="{
+          ...dayCellStyle(c),
+          minHeight: '56px',
+          borderRadius: '8px',
+          padding: '4px',
+          textAlign: 'left',
+          cursor: 'pointer',
+          transition: 'all 0.15s ease',
+        }"
         @click="emit('select-date', c.date)"
+        @mouseenter="(e) => { if (!c.isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(63,184,122,0.1)' }"
+        @mouseleave="(e) => { (e.currentTarget as HTMLElement).style.background = dayCellStyle(c).background as string }"
       >
-        <span :class="dayNumClass(c)">{{ c.day }}</span>
+        <span :style="dayNumStyle(c)">{{ c.day }}</span>
         <div class="mt-0.5 flex min-h-[30px] flex-col gap-[3px] overflow-hidden">
           <template v-for="a in dayAggs(c.date).slice(0, 2)" :key="a.course_id">
             <span
@@ -150,7 +183,8 @@ function dayNumClass(c: DayCell): string {
           </template>
           <span
             v-if="dayAggs(c.date).length > 2"
-            class="px-1 text-[10px] font-medium leading-4 text-ink-ghost"
+            class="px-1 text-[10px] font-medium leading-4"
+            style="color: rgba(255,255,255,0.4);"
           >
             +{{ dayAggs(c.date).length - 2 }}
           </span>
