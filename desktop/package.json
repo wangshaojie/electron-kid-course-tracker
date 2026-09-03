@@ -1,6 +1,6 @@
 {
   "name": "course-tracker",
-  "version": "0.4.3",
+  "version": "0.4.4",
   "private": true,
   "description": "一寸光阴 —— 家长自用的孩子课外培训班课程 / 缴费 / 打卡 / 课时统计工具",
   "main": "dist-electron/main.mjs",

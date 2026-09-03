@@ -158,9 +158,13 @@ jobs:
           prerelease: ${{ contains(steps.version.outputs.version, '-rc') || contains(steps.version.outputs.version, '-beta') || contains(steps.version.outputs.version, '-alpha') }}
           generate_release_notes: true
           fail_on_unmatched_files: true
-          # 精确列两个 .exe，不递归（** 会把 win-unpacked/ 里的 .exe 也匹配上）
+          # 精确列产物：NSIS .exe + blockmap（差分包）+ latest.yml（autoUpdater 必读）+ portable .exe
+          # 不递归（** 会把 win-unpacked/ 里的 .exe 也匹配上）
+          # 注意：portable target 不生成 blockmap / latest.yml，所以只列 portable 那个 .exe
           files: |
             desktop/release/${{ steps.pkgver.outputs.pkgver }}/TimeWell-${{ steps.pkgver.outputs.pkgver }}-x64.exe
+            desktop/release/${{ steps.pkgver.outputs.pkgver }}/TimeWell-${{ steps.pkgver.outputs.pkgver }}-x64.exe.blockmap
+            desktop/release/${{ steps.pkgver.outputs.pkgver }}/latest.yml
             desktop/release/${{ steps.pkgver.outputs.pkgver }}/TimeWell-${{ steps.pkgver.outputs.pkgver }}-portable-x64.exe
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
