@@ -1,6 +1,6 @@
 {
   "name": "course-tracker",
-  "version": "0.4.2",
+  "version": "0.4.3",
   "private": true,
   "description": "一寸光阴 —— 家长自用的孩子课外培训班课程 / 缴费 / 打卡 / 课时统计工具",
   "main": "dist-electron/main.mjs",
@@ -24,6 +24,7 @@
     "@cloudbase/js-sdk": "^3.7.1",
     "@element-plus/icons-vue": "^2.3.1",
     "echarts": "^5.5.1",
+    "electron-updater": "^6.8.9",
     "element-plus": "^2.8.6",
     "exceljs": "^4.4.0",
     "pinia": "^2.2.4",
@@ -93,9 +94,17 @@
       "createStartMenuShortcut": true,
       "shortcutName": "一寸光阴",
       "deleteAppDataOnUninstall": false,
-      "language": "2052"
+      "language": "2052",
+      "include": "build/installer.nsh"
     },
-    "publish": null
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "wangshaojie",
+        "repo": "electron-kid-course-tracker",
+        "releaseType": "release"
+      }
+    ]
   },
   "pnpm": {
     "onlyBuiltDependencies": [

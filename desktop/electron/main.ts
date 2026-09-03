@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
-import { checkForUpdates } from './updater'
+import { checkForUpdates, startNsisDownload, installNsisUpdate, startManualDownload } from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -78,6 +78,27 @@ app.whenReady().then(() => {
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
     if (typeof url === 'string' && /^https?:\/\//.test(url)) {
       await shell.openExternal(url)
+    }
+  })
+  // NSIS 模式：用户点"立即更新"→ 触发下载
+  ipcMain.handle('update:startNsisDownload', () => {
+    startNsisDownload()
+  })
+  // NSIS 模式：下载完成 → 用户点"立即重启并安装"
+  ipcMain.handle('update:installNsisUpdate', () => {
+    installNsisUpdate()
+  })
+  // portable / fallback 模式：用户点"立即更新"→ 主进程下载到 %TEMP%
+  ipcMain.handle(
+    'update:startManualDownload',
+    (_e, info: { version: string; currentVersion: string; tag: string; url: string }, mode: 'portable' | 'fallback') => {
+      void startManualDownload(info, mode)
+    },
+  )
+  // manual 模式：用户点"打开安装包"→ shell.openPath
+  ipcMain.handle('update:openLocalFile', async (_e, p: string) => {
+    if (typeof p === 'string' && p && fsSync.existsSync(p)) {
+      await shell.openPath(p)
     }
   })
   createWindow()

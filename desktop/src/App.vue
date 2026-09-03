@@ -73,32 +73,137 @@ async function loadBusinessData() {
 /**
  * 版本更新提醒：主进程查到新版本会通过 IPC 推过来。
  * 同版本只提醒一次（localStorage 记录），避免每次启动都弹。
+ *
+ * 三档策略（由主进程按安装形态决定）：
+ *   nsis / nsis-fallback → 一键下载 + 自动安装 + 重启
+ *   portable             → 下载到 %TEMP% → 弹"打开安装包"按钮
+ * 失败时回退到"前往 GitHub 下载"。
  */
 const UPDATER_DISMISS_KEY = 'update.dismissed'
+function rememberDismiss(version: string) {
+  try { localStorage.setItem(UPDATER_DISMISS_KEY, version) } catch { /* ignore */ }
+}
+function isDismissed(version: string): boolean {
+  try { return localStorage.getItem(UPDATER_DISMISS_KEY) === version } catch { return false }
+}
+
 function registerUpdater() {
   if (!window.updater) return
+
+  // ---- 收到"有新版本" ----
   window.updater.onUpdateAvailable((info) => {
     // eslint-disable-next-line no-console
-    console.log('[updater] 收到新版本提醒', info.version)
-    try {
-      if (localStorage.getItem(UPDATER_DISMISS_KEY) === info.version) return
-    } catch { /* ignore */ }
-    ElMessageBox.confirm(
-      `当前版本 v${info.currentVersion}，发现新版本 v${info.version}。\n\n是否前往 GitHub 下载页下载更新？`,
+    console.log('[updater] 收到新版本提醒', info.version, 'mode=', info.mode)
+    if (isDismissed(info.version)) return
+
+    const mode = info.mode ?? 'portable' // 老主进程没带 mode → 当 portable 处理（最安全）
+    const isAuto = mode === 'nsis'
+
+    void ElMessageBox.confirm(
+      `当前版本 v${info.currentVersion}，发现新版本 v${info.version}。\n\n${
+        isAuto
+          ? '点击「立即更新」后会自动下载并安装，安装完成后自动重启。'
+          : '点击「立即更新」后会自动下载到本地，下载完成后双击安装即可。'
+      }`,
       '发现新版本',
       {
-        confirmButtonText: '前往下载',
+        confirmButtonText: '立即更新',
         cancelButtonText: '稍后再说',
         type: 'info',
         closeOnClickModal: false,
+        closeOnPressEscape: false,
       },
-    ).then(() => {
-      void window.updater.openExternal(info.url)
-    }).catch(() => {
-      // 点了"稍后再说"或关闭 → 本次不再提醒（换新版本后才恢复）
-      try { localStorage.setItem(UPDATER_DISMISS_KEY, info.version) } catch { /* ignore */ }
+    )
+      .then(async () => {
+        rememberDismiss(info.version)
+        if (isAuto) {
+          // NSIS 模式：直接调主进程触发下载 + 监听进度
+          void window.updater!.startNsisDownload()
+        } else {
+          // portable / fallback：调主进程下到 %TEMP%
+          void window.updater!.startManualDownload(info, mode === 'nsis-fallback' ? 'fallback' : 'portable')
+        }
+      })
+      .catch(() => {
+        rememberDismiss(info.version)
+      })
+  })
+
+  // ---- 进度 ----
+  window.updater.onUpdateProgress((p) => {
+    if (p.percent >= 100) return
+    // 用 Notification 风格提示
+    ElMessage({
+      message: `正在下载新版本… ${p.percent.toFixed(0)}% (${formatBytes(p.transferred)}/${formatBytes(p.total)})`,
+      type: 'info',
+      duration: 0,
+      showClose: true,
+      grouping: true,
     })
   })
+
+  // ---- 下载完成 ----
+  window.updater.onUpdateDownloaded((d) => {
+    if (d.localPath) {
+      // portable 模式：提示打开本地文件
+      void ElMessageBox.confirm(
+        `新版本 v${d.version} 已下载到本地。\n\n路径：${d.localPath}\n\n点击「打开安装包」立即启动安装；点击「稍后再说」保留在本地，下次需要时到该路径手动双击。`,
+        '下载完成',
+        {
+          confirmButtonText: '打开安装包',
+          cancelButtonText: '稍后再说',
+          type: 'success',
+          closeOnClickModal: false,
+        },
+      )
+        .then(() => {
+          void window.updater!.openLocalFile(d.localPath!)
+        })
+        .catch(() => { /* keep */ })
+    } else {
+      // NSIS 模式：提示重启安装
+      void ElMessageBox.confirm(
+        `新版本 v${d.version} 已下载完成。\n\n点击「立即重启并安装」会关闭当前应用并自动完成安装。`,
+        '准备安装',
+        {
+          confirmButtonText: '立即重启并安装',
+          cancelButtonText: '稍后再说（退出时安装）',
+          type: 'success',
+          closeOnClickModal: false,
+        },
+      )
+        .then(() => {
+          void window.updater!.installNsisUpdate()
+        })
+        .catch(() => { /* autoInstallOnAppQuit 已开启，退出时也会装 */ })
+    }
+  })
+
+  // ---- 错误（带 fallback 信息） ----
+  window.updater.onUpdateError((e) => {
+    if (e.fallback === 'openExternal' && e.url) {
+      void ElMessageBox.confirm(
+        `自动更新失败：${e.message}\n\n是否打开 GitHub 下载页手动下载？`,
+        '更新失败',
+        {
+          confirmButtonText: '前往下载',
+          cancelButtonText: '取消',
+          type: 'warning',
+        },
+      ).then(() => {
+        void window.updater!.openExternal(e.url!)
+      }).catch(() => { /* cancel */ })
+    } else {
+      ElMessage({ message: `更新失败：${e.message}`, type: 'error', duration: 0, showClose: true })
+    }
+  })
+}
+
+function formatBytes(n: number): string {
+  if (n < 1024) return `${n} B`
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
+  if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
+  return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
 onMounted(() => {

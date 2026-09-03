@@ -6,6 +6,32 @@ declare module '*.vue' {
   export default component
 }
 
+interface UpdateInfoPayload {
+  version: string
+  currentVersion: string
+  tag: string
+  url: string
+  mode?: 'nsis' | 'portable' | 'nsis-fallback'
+  localPath?: string
+  size?: number
+}
+interface UpdateProgressPayload {
+  percent: number
+  bytesPerSecond?: number
+  transferred: number
+  total: number
+}
+interface UpdateDownloadedPayload {
+  version: string
+  localPath?: string
+  size?: number
+}
+interface UpdateErrorPayload {
+  message: string
+  fallback?: 'openExternal'
+  url?: string
+}
+
 // 主进程通过 preload 暴露的本地 fs API
 declare global {
   interface Window {
@@ -21,16 +47,16 @@ declare global {
       }): Promise<string | null>
       readFileByPath(p: string): Promise<ArrayBuffer>
     }
-    // 版本更新提醒（preload 暴露）
+    // 版本更新（preload 暴露）
     updater: {
-      /** 订阅"发现新版本"，返回取消订阅函数 */
-      onUpdateAvailable(cb: (info: {
-        version: string
-        currentVersion: string
-        tag: string
-        url: string
-      }) => void): () => void
-      /** 用系统浏览器打开外链（GitHub 下载页） */
+      onUpdateAvailable(cb: (info: UpdateInfoPayload) => void): () => void
+      onUpdateProgress(cb: (p: UpdateProgressPayload) => void): () => void
+      onUpdateDownloaded(cb: (d: UpdateDownloadedPayload) => void): () => void
+      onUpdateError(cb: (e: UpdateErrorPayload) => void): () => void
+      startNsisDownload(): Promise<void>
+      installNsisUpdate(): Promise<void>
+      startManualDownload(info: UpdateInfoPayload, mode: 'portable' | 'fallback'): Promise<void>
+      openLocalFile(p: string): Promise<void>
       openExternal(url: string): Promise<void>
     }
   }
