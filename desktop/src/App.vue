@@ -74,9 +74,9 @@ async function loadBusinessData() {
  * 版本更新提醒：主进程查到新版本会通过 IPC 推过来。
  * 同版本只提醒一次（localStorage 记录），避免每次启动都弹。
  *
- * 三档策略（由主进程按安装形态决定）：
- *   nsis / nsis-fallback → 一键下载 + 自动安装 + 重启
- *   portable             → 下载到 %TEMP% → 弹"打开安装包"按钮
+ * 统一策略（NSIS 和 portable 走同一条路）：
+ *   主进程把 .exe 下到 %TEMP%\TimeWell-update\ → 推 localPath → 渲染端弹
+ *   "打开安装包"按钮（NSIS 装包）或"打开安装包"按钮（portable 替换运行）。
  * 失败时回退到"前往 GitHub 下载"。
  */
 const UPDATER_DISMISS_KEY = 'update.dismissed'
@@ -97,14 +97,9 @@ function registerUpdater() {
     if (isDismissed(info.version)) return
 
     const mode = info.mode ?? 'portable' // 老主进程没带 mode → 当 portable 处理（最安全）
-    const isAuto = mode === 'nsis'
 
     void ElMessageBox.confirm(
-      `当前版本 v${info.currentVersion}，发现新版本 v${info.version}。\n\n${
-        isAuto
-          ? '点击「立即更新」后会自动下载并安装，安装完成后自动重启。'
-          : '点击「立即更新」后会自动下载到本地，下载完成后双击安装即可。'
-      }`,
+      `当前版本 v${info.currentVersion}，发现新版本 v${info.version}。\n\n点击「立即更新」后会自动下载到本地，下载完成后双击安装即可。`,
       '发现新版本',
       {
         confirmButtonText: '立即更新',
@@ -116,13 +111,8 @@ function registerUpdater() {
     )
       .then(async () => {
         rememberDismiss(info.version)
-        if (isAuto) {
-          // NSIS 模式：直接调主进程触发下载 + 监听进度
-          void window.updater!.startNsisDownload()
-        } else {
-          // portable / fallback：调主进程下到 %TEMP%
-          void window.updater!.startManualDownload(info, mode === 'nsis-fallback' ? 'fallback' : 'portable')
-        }
+        // 统一调主进程下到 %TEMP%；NSIS 选 installer，portable 选 portable
+        void window.updater!.startManualDownload(info, mode === 'nsis' ? 'fallback' : 'portable')
       })
       .catch(() => {
         rememberDismiss(info.version)
@@ -144,39 +134,25 @@ function registerUpdater() {
 
   // ---- 下载完成 ----
   window.updater.onUpdateDownloaded((d) => {
-    if (d.localPath) {
-      // portable 模式：提示打开本地文件
-      void ElMessageBox.confirm(
-        `新版本 v${d.version} 已下载到本地。\n\n路径：${d.localPath}\n\n点击「打开安装包」立即启动安装；点击「稍后再说」保留在本地，下次需要时到该路径手动双击。`,
-        '下载完成',
-        {
-          confirmButtonText: '打开安装包',
-          cancelButtonText: '稍后再说',
-          type: 'success',
-          closeOnClickModal: false,
-        },
-      )
-        .then(() => {
-          void window.updater!.openLocalFile(d.localPath!)
-        })
-        .catch(() => { /* keep */ })
-    } else {
-      // NSIS 模式：提示重启安装
-      void ElMessageBox.confirm(
-        `新版本 v${d.version} 已下载完成。\n\n点击「立即重启并安装」会关闭当前应用并自动完成安装。`,
-        '准备安装',
-        {
-          confirmButtonText: '立即重启并安装',
-          cancelButtonText: '稍后再说（退出时安装）',
-          type: 'success',
-          closeOnClickModal: false,
-        },
-      )
-        .then(() => {
-          void window.updater!.installNsisUpdate()
-        })
-        .catch(() => { /* autoInstallOnAppQuit 已开启，退出时也会装 */ })
+    // 统一路径：提示用户打开本地 .exe（NSIS 装包 / portable 替换都是它）
+    if (!d.localPath) {
+      ElMessage({ message: '下载完成但未拿到本地路径，请重试或去 GitHub 下载。', type: 'error', duration: 0, showClose: true })
+      return
     }
+    void ElMessageBox.confirm(
+      `新版本 v${d.version} 已下载到本地。\n\n路径：${d.localPath}\n\n点击「打开安装包」立即启动安装；点击「稍后再说」保留在本地，下次需要时到该路径手动双击。`,
+      '下载完成',
+      {
+        confirmButtonText: '打开安装包',
+        cancelButtonText: '稍后再说',
+        type: 'success',
+        closeOnClickModal: false,
+      },
+    )
+      .then(() => {
+        void window.updater!.openLocalFile(d.localPath!)
+      })
+      .catch(() => { /* keep */ })
   })
 
   // ---- 错误（带 fallback 信息） ----

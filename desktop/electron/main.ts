@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
-import { checkForUpdates, startNsisDownload, installNsisUpdate, startManualDownload } from './updater'
+import { checkForUpdates, startManualDownload } from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -80,15 +80,7 @@ app.whenReady().then(() => {
       await shell.openExternal(url)
     }
   })
-  // NSIS 模式：用户点"立即更新"→ 触发下载
-  ipcMain.handle('update:startNsisDownload', () => {
-    startNsisDownload()
-  })
-  // NSIS 模式：下载完成 → 用户点"立即重启并安装"
-  ipcMain.handle('update:installNsisUpdate', () => {
-    installNsisUpdate()
-  })
-  // portable / fallback 模式：用户点"立即更新"→ 主进程下载到 %TEMP%
+  // 用户点"立即更新"→ 主进程下载到 %TEMP%（NSIS 和 portable 走同一条路）
   ipcMain.handle(
     'update:startManualDownload',
     (_e, info: { version: string; currentVersion: string; tag: string; url: string }, mode: 'portable' | 'fallback') => {

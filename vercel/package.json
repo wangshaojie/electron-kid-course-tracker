@@ -1,0 +1,15 @@
+{
+  "name": "kid-course-tracker-vercel",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Vercel Functions for kid-course-tracker (auth-otp + data-api) backed by Neon Postgres",
+  "dependencies": {
+    "@neondatabase/serverless": "^0.9.4",
+    "jose": "^5.9.6",
+    "resend": "^4.0.1"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

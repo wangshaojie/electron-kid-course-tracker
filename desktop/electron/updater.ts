@@ -1,15 +1,18 @@
 /**
- * 版本更新 —— 三档策略：
- *   1. NSIS 安装版：electron-updater 自动下载 + 静默安装 + 重启
- *   2. portable / dev：弹"下载到 %TEMP% → 提示打开安装包"（比"前往下载"少一步浏览器跳转）
- *   3. 全部失败：回到"前往 GitHub Release 页面"兜底
+ * 版本更新 —— 统一策略：
+ *   不管是 NSIS 安装版还是 portable 绿色版，主进程都用 https + fs 直接把
+ *   .exe 装包下载到 %TEMP%\TimeWell-update\，下载完成后推 localPath 给
+ *   渲染端，渲染端弹"立即打开安装包"按钮。
+ *   失败时回退到"前往 GitHub Release 页面"。
  *
- * GitHub release 是 public repo，匿名可读；CI 上传时 softprops 也会把
- * electron-builder 在 NSIS 产物旁生成的 latest.yml 一并 push 上去，
- * autoUpdater 通过 latest.yml 找差分包。
+ * 历史：v0.4.4 之前 NSIS 走 electron-updater 自动静默安装，但 asar 打包后
+ * electron-updater → graceful-fs → fs-extra 动态 require('fs') 在 asar 里
+ * 不支持，会在主进程启动时抛 "Dynamic require of 'fs' is not supported"。
+ * 统一走手动下载，依赖更干净，NSIS 用户体验退化为"下载 → 双击安装"，
+ * 但跨两种安装形态的体验一致、也避免了 electron-updater 的多个 asar 坑
+ * (winCodeSign / latest.yml 缺失等)。
  */
 import { app, BrowserWindow } from 'electron'
-import { autoUpdater, ProgressInfo, UpdateInfo as AUUpdateInfo } from 'electron-updater'
 import https from 'node:https'
 import path from 'node:path'
 import fs from 'node:fs'
@@ -19,7 +22,7 @@ const REPO = 'wangshaojie/electron-kid-course-tracker'
 const RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`
 const LATEST_PAGE = `https://github.com/${REPO}/releases/latest`
 
-/** 给渲染端看的更新信息（轻量版，不引 electron-updater 类型到渲染端） */
+/** 给渲染端看的更新信息（轻量版，主进程手写下载不引第三方类型） */
 export interface UpdateInfo {
   /** 新版本号（不带 v 前缀） */
   version: string
@@ -29,8 +32,8 @@ export interface UpdateInfo {
   tag: string
   /** GitHub Release 页面地址 */
   url: string
-  /** 更新通道：'nsis' = 一键安装；'portable' = 下载到本地提示打开；'nsis-fallback' = NSIS 自动失败回退到下载 */
-  mode?: 'nsis' | 'portable' | 'nsis-fallback'
+  /** 更新通道：'nsis' = NSIS installer 模式（下载后双击装包）；'portable' = portable 模式（下载后双击替换运行） */
+  mode?: 'nsis' | 'portable'
   /** 下载下来的 .exe 本地路径（仅 manual fallback 时有值） */
   localPath?: string
   /** 文件大小（字节） */
@@ -178,54 +181,7 @@ function emit(event: string, payload: unknown) {
   }
 }
 
-/* ========== 通道 A：NSIS —— electron-updater 自动更新 ========== */
-
-function setupAutoUpdater() {
-  autoUpdater.autoDownload = false // 让用户点确认后再下
-  autoUpdater.autoInstallOnAppQuit = true // 用户没点立即装时，退出时自动装
-
-  autoUpdater.on('update-available', (info: AUUpdateInfo) => {
-    console.log(`[updater:auto] 有新版本 ${info.version}`)
-    emit('update:available', {
-      version: info.version,
-      currentVersion: app.getVersion(),
-      tag: `v${info.version}`,
-      url: info.releaseNotes as string ?? LATEST_PAGE,
-      mode: 'nsis',
-    } satisfies UpdateInfo & { mode: UpdateMode })
-  })
-
-  autoUpdater.on('download-progress', (p: ProgressInfo) => {
-    emit('update:progress', {
-      percent: p.percent,
-      bytesPerSecond: p.bytesPerSecond,
-      transferred: p.transferred,
-      total: p.total,
-    })
-  })
-
-  autoUpdater.on('update-downloaded', (info: AUUpdateInfo) => {
-    console.log(`[updater:auto] 下载完成 ${info.version}，等待用户确认安装`)
-    emit('update:downloaded', { version: info.version })
-  })
-
-  autoUpdater.on('error', (err: Error) => {
-    console.log(`[updater:auto] 失败: ${err.message}`)
-    emit('update:error', { message: err.message })
-  })
-}
-
-/** 渲染端点了"立即更新"按钮 → 触发下载 */
-export function startNsisDownload(): void {
-  void autoUpdater.downloadUpdate()
-}
-
-/** 渲染端点了"立即重启安装"按钮 → quitAndInstall */
-export function installNsisUpdate(): void {
-  autoUpdater.quitAndInstall()
-}
-
-/* ========== 通道 B：portable —— 手动下载 .exe 到 %TEMP% ========== */
+/* ========== 统一通道：手写 https 下载 .exe 到 %TEMP% ========== */
 
 function pickPortableAsset(release: GhRelease, version: string): GhReleaseAsset | null {
   // 命名规则：TimeWell-${version}-portable-x64.exe
@@ -341,21 +297,8 @@ export async function checkForUpdates(currentOverride?: string): Promise<void> {
     return
   }
 
-  if (mode === 'nsis') {
-    setupAutoUpdater()
-    try {
-      await autoUpdater.checkForUpdates()
-      return
-    } catch (err) {
-      const msg = err instanceof Error ? err.message : String(err)
-      console.log(`[updater:auto] checkForUpdates 失败: ${msg}，回退到手动下载`)
-      // 回退到手动下 NSIS installer
-      emit('update:available', { ...info, mode: 'nsis-fallback' } as UpdateInfo)
-      return
-    }
-  }
-
-  // portable / dev：直接发"有新版本 + portable mode"，渲染端调 startManualDownload
-  console.log(`[updater:portable] 发现新版本 ${info.version}（手动下载模式）`)
-  emit('update:available', { ...info, mode: 'portable' } as UpdateInfo & { mode: UpdateMode })
+  // 不管 NSIS 还是 portable，统一走 manual 下载：
+  // NSIS 模式选 installer .exe，portable 模式选 portable .exe
+  console.log(`[updater] 发现新版本 ${info.version}（${mode} 模式，手动下载）`)
+  emit('update:available', { ...info, mode } as UpdateInfo & { mode: UpdateMode })
 }

@@ -23,7 +23,7 @@ contextBridge.exposeInMainWorld('kidfs', {
 
 // 版本更新：订阅主进程推送 + 触发下载/安装
 contextBridge.exposeInMainWorld('updater', {
-  /** 主进程发现新版本时推送（带 mode：nsis / portable / nsis-fallback） */
+  /** 主进程发现新版本时推送（带 mode：nsis / portable） */
   onUpdateAvailable: (cb: (info: UpdateInfo) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, info: UpdateInfo) => cb(info)
     ipcRenderer.on('update:available', listener)
@@ -35,7 +35,7 @@ contextBridge.exposeInMainWorld('updater', {
     ipcRenderer.on('update:progress', listener)
     return () => ipcRenderer.removeListener('update:progress', listener)
   },
-  /** 下载完成（NSIS：等用户点立即安装；manual：等用户点打开 .exe） */
+  /** 下载完成（统一等用户点"打开安装包"） */
   onUpdateDownloaded: (cb: (d: UpdateDownloaded) => void) => {
     const listener = (_e: Electron.IpcRendererEvent, d: UpdateDownloaded) => cb(d)
     ipcRenderer.on('update:downloaded', listener)
@@ -47,11 +47,7 @@ contextBridge.exposeInMainWorld('updater', {
     ipcRenderer.on('update:error', listener)
     return () => ipcRenderer.removeListener('update:error', listener)
   },
-  /** NSIS 模式：用户点"立即更新" → 触发下载 */
-  startNsisDownload: () => ipcRenderer.invoke('update:startNsisDownload'),
-  /** NSIS 模式：下载完成 → 用户点"立即安装并重启" */
-  installNsisUpdate: () => ipcRenderer.invoke('update:installNsisUpdate'),
-  /** portable / fallback 模式：用户点"立即更新" → 触发下载到 %TEMP% */
+  /** 用户点"立即更新" → 触发下载到 %TEMP%（NSIS 和 portable 同一条路） */
   startManualDownload: (info: UpdateInfo, mode: 'portable' | 'fallback') =>
     ipcRenderer.invoke('update:startManualDownload', info, mode),
   /** manual 模式：下载完成 → 用户点"打开安装包" */

@@ -8,6 +8,7 @@ release
 Thumbs.db
 .idea
 .vscode
+.tsconfig.*.local.json
 
 # 密钥 / 本地配置（严禁提交）
 .env

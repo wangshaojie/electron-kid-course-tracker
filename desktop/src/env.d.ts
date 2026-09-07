@@ -11,7 +11,7 @@ interface UpdateInfoPayload {
   currentVersion: string
   tag: string
   url: string
-  mode?: 'nsis' | 'portable' | 'nsis-fallback'
+  mode?: 'nsis' | 'portable'
   localPath?: string
   size?: number
 }
@@ -53,8 +53,6 @@ declare global {
       onUpdateProgress(cb: (p: UpdateProgressPayload) => void): () => void
       onUpdateDownloaded(cb: (d: UpdateDownloadedPayload) => void): () => void
       onUpdateError(cb: (e: UpdateErrorPayload) => void): () => void
-      startNsisDownload(): Promise<void>
-      installNsisUpdate(): Promise<void>
       startManualDownload(info: UpdateInfoPayload, mode: 'portable' | 'fallback'): Promise<void>
       openLocalFile(p: string): Promise<void>
       openExternal(url: string): Promise<void>
