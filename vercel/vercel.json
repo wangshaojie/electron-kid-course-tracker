@@ -1,17 +1,5 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
-  "functions": {
-    "api/auth-otp/[action].js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 10,
-      "memory": 256
-    },
-    "api/data-api/[...path].js": {
-      "runtime": "nodejs20.x",
-      "maxDuration": 10,
-      "memory": 256
-    }
-  },
   "rewrites": [
     { "source": "/auth-otp/:action", "destination": "/api/auth-otp/:action" },
     { "source": "/data-api/:path*", "destination": "/api/data-api/:path*" }
