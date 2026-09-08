@@ -1,5 +1,5 @@
 /**
- * /api/data-api/[...path]
+ * /api/data-api/[[...path]]  (optional catch-all，规避平台对 [...path] 参数注入异常)
  * --------------------------------------------------------------
  * 取代 CloudBase data-api HTTP Function。
  *
@@ -342,15 +342,33 @@ function handleHealth(req, res) {
   })
 }
 
+// 从请求里提取 data-api 之后的路径段。
+// Vercel 平台对 catch-all 的注入不总是可靠（实测 req.query.path 可能为空、多段甚至不进函数），
+// 因此优先取 req.query.path，其次从 req.url 兜底解析，保证 health/admin/b 路由可用。
+function extractPath(req) {
+  const rawPath = req.query.path
+  if (Array.isArray(rawPath)) return rawPath.join('/')
+  if (typeof rawPath === 'string' && rawPath) return rawPath
+  try {
+    const url = new URL(req.url, 'http://localhost')
+    const segs = url.pathname.split('/').filter(Boolean)
+    // 期望形如 ['api','data-api','health',...]，取 'data-api' 之后的全部段
+    for (let i = 0; i < segs.length; i++) {
+      if (segs[i] === 'data-api') return segs.slice(i + 1).join('/')
+    }
+  } catch {
+    /* ignore */
+  }
+  return ''
+}
+
 // 入口
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
     res.status(204).end()
     return
   }
-  // Vercel catch-all [...path] 把 path 放在 req.query.path，可能是 string 或 string[]
-  const rawPath = req.query.path
-  const path = (Array.isArray(rawPath) ? rawPath.join('/') : String(rawPath || '')).toLowerCase()
+  const path = extractPath(req).toLowerCase()
   try {
     // /api/data-api/health
     if (path === 'health' && req.method === 'GET') return handleHealth(req, res)
