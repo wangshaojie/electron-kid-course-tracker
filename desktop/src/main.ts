@@ -3,6 +3,9 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
+// 手动 import 函数式弹窗样式：unplugin 按需不会处理 JS 直接调用的 ElMessageBox / ElMessage
+import 'element-plus/theme-chalk/el-message-box.css'
+import 'element-plus/theme-chalk/el-message.css'
 import './styles/index.css'
 
 const T0 = performance.now()
