@@ -1,7 +1,3 @@
 {
-  "$schema": "https://openapi.vercel.sh/vercel.json",
-  "rewrites": [
-    { "source": "/auth-otp/:action", "destination": "/api/auth-otp/:action" },
-    { "source": "/data-api/:path*", "destination": "/api/data-api/:path*" }
-  ]
+  "$schema": "https://openapi.vercel.sh/vercel.json"
 }
