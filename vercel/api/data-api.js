@@ -1,6 +1,11 @@
 /**
- * /api/data-api/[[...path]]  (optional catch-all，规避平台对 [...path] 参数注入异常)
+ * /api/data-api  单文件函数（不再用 [...path] catch-all —— Vercel 平台对 catch-all 注册失败）
  * --------------------------------------------------------------
+ * 子路径经 vercel.json rewrites 以 ?path= 传入，如：
+ *   /api/data-api/health        → ?path=health
+ *   /api/data-api/admin/stats   → ?path=admin/stats
+ *   /api/data-api/b/children    → ?path=b/children
+ * 函数从 req.query.path / req.url 解析子路径再分发。
  * 取代 CloudBase data-api HTTP Function。
  *
  * 路由：
@@ -21,8 +26,8 @@
  */
 
 import { createHash } from 'node:crypto'
-import { getSql } from '../../lib/db.js'
-import { requireAuthAsync, requireAdminAsync, sendJson, readJsonBody } from '../../lib/auth.js'
+import { getSql } from '../lib/db.js'
+import { requireAuthAsync, requireAdminAsync, sendJson, readJsonBody } from '../lib/auth.js'
 
 // 业务表白名单（与 CloudBase 版完全一致：select/write/filters/orders/dateRange）
 const BUSINESS_TABLES = {
