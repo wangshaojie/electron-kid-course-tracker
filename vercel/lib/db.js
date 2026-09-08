@@ -31,7 +31,11 @@ let _sql = null
  */
 export function getSql() {
   if (_sql) return _sql
-  const url = process.env.DATABASE_URL
+  // 防御：env 注入链路偶发在串首带入 UTF-8 BOM(U+FEFF)/空白，
+  // 会让 postgres.js 内部 new URL() 抛 ERR_INVALID_URL，此处统一剥掉
+  const url = String(process.env.DATABASE_URL || '')
+    .replace(/^\uFEFF+/, '')
+    .trim()
   if (!url) {
     throw new Error('DATABASE_URL is not set (Supabase connection string)')
   }
