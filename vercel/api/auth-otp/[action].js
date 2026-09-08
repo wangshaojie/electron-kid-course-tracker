@@ -416,6 +416,29 @@ function handleHealth(req, res) {
   })
 }
 
+// TEMP diagnostic (remove after fix): inspect DATABASE_URL bytes + client construct
+async function handleDbDiag(req, res) {
+  const url = process.env.DATABASE_URL || ''
+  const cps = [...url].map((c) => c.codePointAt(0))
+  const bad = cps.filter((c) => [0, 9, 10, 13, 32, 34, 39, 65279].includes(c))
+  const probe = {
+    len: url.length,
+    head: url.slice(0, 14),
+    hostpart: url.slice(url.indexOf('@') + 1),
+    bad,
+    cps: cps.slice(0, 130).join(','),
+  }
+  let connect = null
+  try {
+    const sql = getSql()
+    await sql`select 1`
+    connect = 'ok'
+  } catch (e) {
+    connect = `${e?.code || ''} ${e?.message || String(e)}`.trim()
+  }
+  return sendJson(res, 200, { ok: true, probe, connect })
+}
+
 // ============== 入口 ==============
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -425,6 +448,7 @@ export default async function handler(req, res) {
   const action = String(req.query.action || '').toLowerCase()
   try {
     if (action === 'health' && req.method === 'GET') return handleHealth(req, res)
+    if (action === 'dbdiag' && req.method === 'GET') return await handleDbDiag(req, res)
 
     if (action === 'send' && req.method === 'POST') {
       const body = await readJsonBody(req)
