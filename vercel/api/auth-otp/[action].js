@@ -29,7 +29,7 @@ import crypto from 'node:crypto'
 import { Resend } from 'resend'
 import { getSql } from '../../lib/db.js'
 import { signJwt, uidOf } from '../../lib/jwt.js'
-import { requireAuthAsync, sendJson, readJsonBody } from '../../lib/auth.js'
+import { requireAuthAsync, sendJson, readJsonBody, preflight } from '../../lib/auth.js'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const MAIL_FROM = process.env.MAIL_FROM || 'onboarding@resend.dev'
@@ -419,7 +419,7 @@ function handleHealth(req, res) {
 // ============== 入口 ==============
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    res.status(204).end()
+    preflight(res)
     return
   }
   const action = String(req.query.action || '').toLowerCase()

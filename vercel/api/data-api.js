@@ -27,7 +27,7 @@
 
 import { createHash } from 'node:crypto'
 import { getSql } from '../lib/db.js'
-import { requireAuthAsync, requireAdminAsync, sendJson, readJsonBody } from '../lib/auth.js'
+import { requireAuthAsync, requireAdminAsync, sendJson, readJsonBody, preflight } from '../lib/auth.js'
 
 // 业务表白名单（与 CloudBase 版完全一致：select/write/filters/orders/dateRange）
 const BUSINESS_TABLES = {
@@ -370,7 +370,7 @@ function extractPath(req) {
 // 入口
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
-    res.status(204).end()
+    preflight(res)
     return
   }
   const path = extractPath(req).toLowerCase()
