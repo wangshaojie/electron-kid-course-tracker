@@ -3,10 +3,10 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
-  "description": "Vercel Functions for kid-course-tracker (auth-otp + data-api) backed by Neon Postgres",
+  "description": "Vercel Functions for kid-course-tracker (auth-otp + data-api) backed by Supabase Postgres",
   "dependencies": {
-    "@neondatabase/serverless": "^0.9.4",
     "jose": "^5.9.6",
+    "postgres": "^3.4.4",
     "resend": "^4.0.1"
   },
   "engines": {

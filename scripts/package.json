@@ -1,0 +1,13 @@
+{
+  "name": "kid-course-tracker-scripts",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "迁移/运维脚本（CloudBase → Supabase 等），依赖集中在这装",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^3.5.0",
+    "@neondatabase/serverless": "^0.9.4",
+    "pg": "^8.23.0",
+    "postgres": "^3.4.4"
+  }
+}

@@ -15,7 +15,7 @@
  *   GET   health                                             → { ok: true }
  *
  * env:
- *   - DATABASE_URL          Neon pooled connection string
+ *   - DATABASE_URL          Supabase pooled connection string
  *   - JWT_SECRET            与 CloudBase auth-otp 完全一致
  *   - RESEND_API_KEY        Resend
  *   - MAIL_FROM             发件人（默认 onboarding@resend.dev）

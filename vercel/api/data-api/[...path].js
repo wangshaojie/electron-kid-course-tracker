@@ -15,7 +15,7 @@
  *   DELETE /b/:table/:id         → 删除
  *
  * env:
- *   - DATABASE_URL    Neon pooled connection string
+ *   - DATABASE_URL    Supabase pooled connection string
  *   - JWT_SECRET      与 auth-otp 共享
  *   - ADMIN_EMAILS    逗号分隔管理员邮箱（小写）
  */

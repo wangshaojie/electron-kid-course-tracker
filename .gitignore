@@ -15,6 +15,17 @@ desktop/.vite/
 .tmp/
 .tmp-*/
 
+# ── Supabase / Vercel / 迁移脚本 本地密钥与依赖 ──
+supabase/.env
+supabase/.env.*
+supabase/.temp/
+vercel/.env
+vercel/.env.*
+scripts/.env
+scripts/node_modules/
+vercel/node_modules/
+node_modules/
+
 # ── 工具链 / 编辑器 ────────────────────────────
 .codebuddy/
 skills-lock.json

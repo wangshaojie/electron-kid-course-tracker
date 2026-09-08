@@ -1,24 +1,27 @@
 /**
  * lib/cloudbase.ts —— 自建 JWT + HTTP Function 入口
  *
- * v0.5+ 变更：业务读写全部走 data-api HTTP Function，PG 用 service role 直连；
- * 前端不再需要 `@cloudbase/js-sdk`。这里只保留自建 JWT、OTP / 密码 / 业务 API 等 fetch 封装。
+ * ⚠️ 文件名沿用历史（cloudbase.ts），实际已与腾讯 CloudBase 完全脱钩：
+ * 自建 OTP/密码鉴权 + 业务读写都走两个自托管 HTTP Function（部署在 Vercel，
+ * 底层 PG 是 Supabase）。这里只保留自建 JWT、OTP / 密码 / 业务 API 等 fetch 封装。
  *
  * 关键点：
- *  - 自建 OTP 走 HTTP Function `auth-otp`（Resend 发邮件 + 我们的 PG 表存码 + 自签 JWT）
- *  - 业务数据走 `businessApi` → `data-api` HTTP Function
+ *  - 自建 OTP 走 HTTP Function `auth-otp`（Resend 发邮件 + 存验证码 + 自签 JWT）
+ *  - 业务数据走 `businessApi` → `data-api` HTTP Function（服务端 owner_id 强制注入）
  *  - 鉴权靠自签 JWT 存到 localStorage / sessionStorage
- *  - CloudBase 自带的 `auth.signInWithOtp` 完全不用了
  */
 
 const envId = import.meta.env.VITE_CLOUDBASE_ENV_ID as string
 const authOtpUrl = (import.meta.env.VITE_AUTH_OTP_URL as string) ||
-  `https://${envId}.service.tcloudbase.com/auth-otp`
+  (envId ? `https://${envId}.service.tcloudbase.com/auth-otp` : '')
 const dataApiUrl = (import.meta.env.VITE_DATA_API_URL as string) ||
-  `https://${envId}.service.tcloudbase.com/data-api`
+  (envId ? `https://${envId}.service.tcloudbase.com/data-api` : '')
 
-if (!envId) {
-  throw new Error('VITE_CLOUDBASE_ENV_ID 未设置（.env.development）')
+// 两个端点都必须可解析：要么显式配 URL（迁移后主路径），要么给旧 envId 兜底
+if (!authOtpUrl || !dataApiUrl) {
+  throw new Error(
+    '缺少接口地址：请配置 VITE_AUTH_OTP_URL / VITE_DATA_API_URL（指向部署好的 auth-otp / data-api），或 VITE_CLOUDBASE_ENV_ID（旧 CloudBase 兜底）',
+  )
 }
 
 /** auth-otp HTTP function 根 URL */
