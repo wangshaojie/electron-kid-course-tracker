@@ -26,7 +26,8 @@ const checkins = useCheckinsStore()
 
 const isLoginPage = computed(() => route.name === 'login')
 const initError = ref<string | null>(null)
-const initializing = ref(false)
+// 默认 true：登录后立即进入“内容区同步中”态，避免先闪一帧空页面再切 loading
+const initializing = ref(true)
 let loadingPromise: Promise<void> | null = null
 
 /**
@@ -215,9 +216,13 @@ watch(
   <router-view v-if="isLoginPage" />
 
   <AppLayout v-else-if="auth.isAuthenticated">
-    <div v-if="initializing" class="splash">
-      <div class="dot-pulse" />
-      <p>正在从云端拉取数据…</p>
+    <!-- 登录后同步业务数据：loading 只占内容区，侧栏立即可见（不再全屏盖白） -->
+    <div v-if="initializing" class="content-splash">
+      <div class="glass-card content-loading-card">
+        <div class="loading-orb">🌱</div>
+        <p class="loading-title">正在同步你的数据…</p>
+        <p class="loading-sub">宝贝档案 · 课程 · 打卡记录</p>
+      </div>
     </div>
 
     <router-view v-else v-slot="{ Component, route }">
@@ -231,24 +236,81 @@ watch(
 </template>
 
 <style scoped>
-.boot-splash, .splash {
+/* 启动兜底（未登录且非登录页的极短过渡帧）：暗色，不闪白 */
+.boot-splash {
   position: fixed;
   inset: 0;
-  background: #F7FAF8;
+  background: #0a0e1a;
+}
+
+/* 登录后同步业务数据：只盖内容区（AppLayout 的 main 需 position:relative），侧栏保持可见 */
+.content-splash {
+  position: absolute;
+  inset: 0;
+  z-index: 5;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.content-loading-card {
   display: flex;
   flex-direction: column;
   align-items: center;
+  gap: 14px;
+  padding: 36px 56px;
+  animation: splash-card-in 0.4s cubic-bezier(0.16, 1, 0.3, 1) both;
+}
+
+.loading-orb {
+  display: flex;
+  align-items: center;
   justify-content: center;
-  gap: 16px;
+  width: 56px;
+  height: 56px;
+  font-size: 26px;
+  border-radius: 18px;
+  background: linear-gradient(135deg, rgba(63, 184, 122, 0.28) 0%, rgba(63, 184, 122, 0.1) 100%);
+  border: 1px solid rgba(63, 184, 122, 0.35);
+  box-shadow:
+    0 8px 24px -6px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  animation: orb-breathe 1.8s ease-in-out infinite;
 }
-.splash p { color: #6b7280; font-size: 14px; }
-.dot-pulse {
-  width: 32px; height: 32px; border-radius: 50%;
-  background: #3FB87A;
-  animation: pulse 1.2s ease-in-out infinite;
+
+.loading-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 600;
+  color: #fff;
+  letter-spacing: 0.02em;
 }
-@keyframes pulse {
-  0%, 100% { transform: scale(0.6); opacity: 0.4; }
-  50%      { transform: scale(1.0); opacity: 1.0; }
+
+.loading-sub {
+  margin: 0;
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+}
+
+@keyframes splash-card-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.98); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+@keyframes orb-breathe {
+  0%, 100% {
+    transform: scale(1);
+    box-shadow:
+      0 8px 24px -6px rgba(0, 0, 0, 0.5),
+      0 0 0 0 rgba(63, 184, 122, 0.35),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow:
+      0 8px 24px -6px rgba(0, 0, 0, 0.5),
+      0 0 0 14px rgba(63, 184, 122, 0),
+      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+  }
 }
 </style>

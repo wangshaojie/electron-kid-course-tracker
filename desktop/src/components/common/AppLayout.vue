@@ -191,8 +191,8 @@ watch(
       </div>
     </aside>
 
-    <!-- 内容区 -->
-    <main class="flex flex-1 flex-col overflow-hidden">
+    <!-- 内容区（relative：App.vue 的同步中 loading 用它做定位容器，不盖侧栏） -->
+    <main class="relative flex flex-1 flex-col overflow-hidden">
       <slot />
     </main>
   </div>

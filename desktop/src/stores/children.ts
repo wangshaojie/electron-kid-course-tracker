@@ -104,7 +104,11 @@ export const useChildrenStore = defineStore('children', () => {
    */
   async function load() {
     const uid = requireUid()
-    const list = await businessApi<Child[]>('GET', '/b/children?order=sort_order&asc=true')
+    // children 与 user_prefs 并行拉取，少一次网络往返（冷启动更快）
+    const [list, cloudActive] = await Promise.all([
+      businessApi<Child[]>('GET', '/b/children?order=sort_order&asc=true'),
+      readActivePref(uid),
+    ])
     items.value = list
 
     if (list.length === 0) {
@@ -115,8 +119,6 @@ export const useChildrenStore = defineStore('children', () => {
       return
     }
 
-    // 1) 优先云端 user_prefs
-    const cloudActive = await readActivePref(uid)
     // 2) 兜底本地 localStorage
     const lsActive = readLS()
 

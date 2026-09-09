@@ -4,6 +4,10 @@
   "private": true,
   "description": "一寸光阴 —— 家长自用的孩子课外培训班课程 / 缴费 / 打卡 / 课时统计工具",
   "main": "dist-electron/main.mjs",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/wangshaojie/electron-kid-course-tracker.git"
+  },
   "author": {
     "name": "Mavis",
     "email": "support@example.com"
