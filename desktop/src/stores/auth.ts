@@ -20,10 +20,10 @@ import {
   otpVerify,
   passwordLogin,
   setPassword as setPasswordApi,
+  setPasswordWithAuth as setPasswordWithAuthApi,
   resetPassword as resetPasswordApi,
   changePassword as changePasswordApi,
   getPasswordStatus as getPasswordStatusApi,
-  register as registerApi,
   getActiveUser,
   getActiveJwt,
   persistSession,
@@ -120,9 +120,16 @@ export const useAuthStore = defineStore('auth', () => {
   }
 
   /**
-   * 注册（OTP + 设密 + 签 JWT，一次走完）
-   * 成功路径与 loginWithPassword 完全一致：存 token + userRev+1 触发业务重载
-   * 失败（邮箱已注册 / OTP 错 / 弱密码）返回中文错误
+   * 注册（v0.4+：先验证邮箱，再设置密码，分两步走）
+   *  - 第 1 步：POST /verify → 消费 OTP + 签 JWT（与 verifyCode 走同一条路径）
+   *  - 第 2 步：POST /set-password 带 Bearer → 后端不消耗 OTP，email 校验，upsert 密码
+   *  成功路径与 loginWithPassword 完全一致：存 token + userRev+1 触发业务重载
+   *  失败语义：
+   *    - 第 1 步失败：OTP 错 / 已用过 → 返回原错误
+   *    - 第 2 步失败：邮箱已注册（409）/ 弱密码（400）/ 邮箱不匹配（403）
+   *  副作用：第 1 步成功后 token 已经存进 store + persistSession，**即便第 2 步失败** session 也算登录
+   *  设计取舍：第 1 步成功 = 邮箱所有权已确认；第 2 步失败最常见是"邮箱已注册"——
+   *  这种情况下用户拿着 verify 拿到的 token 已经是合法登录态，UI 提示去登录页即可。
    */
   async function register(
     email: string,
@@ -130,14 +137,35 @@ export const useAuthStore = defineStore('auth', () => {
     password: string,
     remember: boolean = true,
   ): Promise<{ error: string | null }> {
-    const r = await registerApi(email, code, password)
-    if (!r.ok) return { error: r.error }
-    token.value = r.token
-    user.value = { uid: r.uid, email: r.email, role: r.role }
+    // 防御性清洗 code：去掉空白/全角空格/全角数字 → 留 6 位半角数字
+    // 原因：复制邮件验证码常带不可见字符（半角空格、thin space、全角数字 0-9），
+    //       这些会让后端 /^\d{6}$/ 拒绝，但前端 step1 stepValid 校验可能已经通过
+    const codeClean = String(code || '').replace(/[\s\u3000\uFF10-\uFF19]/g, (c) => {
+      // 全角数字 0-9 (U+FF10-U+FF19) → 半角
+      if (c >= '\uFF10' && c <= '\uFF19') return String(c.charCodeAt(0) - 0xFF10)
+      // 空白类直接删除
+      return ''
+    })
+    if (!/^\d{6}$/.test(codeClean)) {
+      return { error: '验证码格式不正确（应为 6 位数字）' }
+    }
+
+    // 第 1 步：验证邮箱 + 拿 JWT
+    const v = await otpVerify(email, codeClean)
+    if (!v.ok) return { error: v.error }
+    token.value = v.token
+    user.value = { uid: v.uid, email: v.email, role: v.role }
     status.value = 'authenticated'
     userRev.value += 1
-    persistSession(r.token, user.value, remember)
+    persistSession(v.token, user.value, remember)
     persistEmail(email)
+
+    // 第 2 步：带 Bearer 设密（不消耗 OTP）
+    const s = await setPasswordWithAuthApi(email, password)
+    if (!s.ok) {
+      // 邮箱已注册（409）等情况：session 仍有效，让 UI 提示用户
+      return { error: s.error }
+    }
     return { error: null }
   }
 

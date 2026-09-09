@@ -28,7 +28,7 @@
 import crypto from 'node:crypto'
 import { Resend } from 'resend'
 import { getSql } from '../../lib/db.js'
-import { signJwt, uidOf } from '../../lib/jwt.js'
+import { signJwt, uidOf, verifyJwt } from '../../lib/jwt.js'
 import { requireAuthAsync, sendJson, readJsonBody, preflight } from '../../lib/auth.js'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
@@ -307,17 +307,60 @@ async function handleRegister(req, res, body) {
   return sendJson(res, 200, { ok: true, token, uid, email, role })
 }
 
+// 设置 / 修改 / 重置密码：两条入口
+//   1) Bearer 路径（v0.4+）：已通过 /verify 拿到 JWT，可直接写密码，免输第二遍码
+//      - 用途：注册流程（verify → set-password-with-bearer）一步走完
+//      - 校验：JWT 有效 + body.email 与 JWT.email 一致（防 A 拿 token 给 B 设密）
+//      - 注册场景必须先 check 邮箱未注册 → 409 email_already_registered
+//   2) OTP 路径（v0.3）：6 位验证码确认邮箱所有权（复用 OTP 限流）
+//      - 用途：ForgotPasswordDialog、首次设置密码（无 session）
+// /set-password 与 /reset-password 共用
 async function handleSetPassword(req, res, body) {
+  const password = String(body.password || '')
+  if (!isValidPassword(password)) return sendJson(res, 400, { error: 'weak_password' })
+
+  // 软验 Bearer：有就尝试 Bearer 路径，失败回落到 OTP 路径
+  const auth = String(req.headers?.authorization || req.headers?.Authorization || '')
+  const m = /^Bearer\s+(.+)$/i.exec(auth.trim())
+  if (m) {
+    const v = await verifyJwt(m[1])
+    if (v.ok) {
+      const tokenEmail = String(v.payload.email).toLowerCase()
+      const bodyEmail = String(body.email || '').trim().toLowerCase()
+      if (!isValidEmail(bodyEmail)) return sendJson(res, 400, { error: 'invalid_email' })
+      if (bodyEmail !== tokenEmail) {
+        return sendJson(res, 403, { error: 'email_mismatch' })
+      }
+      // 注册场景：邮箱已注册 = 409（沿用 /register 语义）
+      try {
+        const sql = getSql()
+        const existing = await sql`SELECT email FROM user_passwords WHERE email = ${tokenEmail} LIMIT 1`
+        if (existing.length) {
+          return sendJson(res, 409, { error: 'email_already_registered' })
+        }
+      } catch (e) {
+        console.error('[set-password:bearer] select error:', e)
+        return sendJson(res, 500, { error: 'db_error', detail: e?.message || String(e) })
+      }
+      return await writePasswordUpsert(res, tokenEmail, password)
+    }
+    // Bearer 无效（过期/伪造）→ 静默回落到 OTP 路径
+  }
+
+  // OTP 路径（v0.3 兼容）：ForgotPasswordDialog、首次设置密码
   const email = String(body.email || '').trim().toLowerCase()
   const code = String(body.code || '').trim()
-  const password = String(body.password || '')
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' })
   if (!/^\d{6}$/.test(code)) return sendJson(res, 400, { error: 'invalid_code' })
-  if (!isValidPassword(password)) return sendJson(res, 400, { error: 'weak_password' })
 
   const r = await verifyOtpAndConsume(email, code)
   if (!r.ok) return sendJson(res, r.status, { error: r.error, detail: r.detail })
 
+  return await writePasswordUpsert(res, email, password)
+}
+
+// 写密码（upsert user_passwords）—— Bearer / OTP 两条路径共用
+async function writePasswordUpsert(res, email, password) {
   const hash = hashPassword(password)
   try {
     const sql = getSql()

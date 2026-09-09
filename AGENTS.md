@@ -237,33 +237,39 @@ kid-course-tracker/
 
 ## 4. 核心约定
 
-### 4.1 鉴权流程（v0.3+：密码为主，邮箱为辅）
+### 4.1 鉴权流程（v0.4+：密码为主，邮箱为辅；注册改为"先验证邮箱再设密"）
 
 **核心思路**：密码是主凭证，邮箱**仅用于**注册/找回/改密时的身份验证。注册即设密，登录走密码，不存在"只有邮箱没密码"的合法状态。
 
 #### 三种主流程
 
-**1. 注册（`/register`）**：
+**1. 注册（v0.4+：先验证邮箱，再设置密码）**：
 - `Login.vue` 密码 Tab 底部 "点此注册" → `RegisterDialog`
-- Step 1: 邮箱 + 密码 + 确认密码（前端校验 ≥ 8 位含字母数字 + 两次一致）
-- Step 2: 邮箱验证码（6 位）→ Step 3: 自动登录 + 跳首页
-- 后端一次性走完：校验 OTP（消耗） → 校验密码强度 → 查 `user_passwords` 不存在 → 写 hash → 签 JWT 返回
-- **邮箱已注册 → 409 `email_already_registered`**，引导去登录/忘记密码
-- 成功返回 `{ token, uid, email, role }` 与 `/login` / `/verify` **结构完全一致**
+- Step 1: 邮箱 + 6 位邮箱验证码（前端仅校验格式，不发请求）
+- Step 2: 密码 + 确认密码（前端校验 ≥ 8 位含字母数字 + 两次一致）→ Step 3: 自动登录 + 跳首页
+- 后端链路（`auth.register` 内部组合两个端点）：
+  - **第 1 步**：`POST /verify` → 消费 OTP + 签 JWT → store 存 session
+  - **第 2 步**：`POST /set-password` 带 Bearer JWT → 后端**不消耗 OTP**、要求 body.email 与 JWT.email 一致、邮箱已注册 → `409 email_already_registered`、未注册 → 写 hash
+- **邮箱已注册**（第 2 步 409）：store 已经在第 1 步写入 session；UI 引导用户去登录页
+- **安全设计**：
+  - Bearer 路径校验 `body.email === jwt.email`（防 A 拿自己 token 给 B 设密）
+  - Bearer 路径不消耗 OTP（验证码已在第 1 步用掉）
+  - OTP 路径（`ForgotPasswordDialog`）保持 v0.3 行为不变，向后兼容
+- `/register` 老端点**保留**（v0.3 一次性走完的版本，不删除以免破坏旧版 App），但前端不再调用
 
 **2. 登录（`/login`，默认主路径）**：
 - `Login.vue` 密码 Tab（默认）→ 邮箱 + 密码 → `/login`
-- 成功签与 `/register` / `/verify` **完全相同的 JWT**，data-api / 管理员白名单 / owner_id 逻辑零改动
+- 成功签与 `/verify` **完全相同的 JWT**，data-api / 管理员白名单 / owner_id 逻辑零改动
 - **安全设计**：
   - 密码 ≥ 8 位含字母数字（前端 + 服务端双重校验）
   - 登录失败统一返回 `invalid_credentials`（防邮箱枚举）
   - 按 email 连续失败 5 次锁 15 分钟（内存 Map `loginFails`，冷启动重置可接受）
-  - 未设密码的邮箱 `/login` 也返回同一句错误（理论上 v0.3 后不存在这种状态，但保留兜底）
+  - 未设密码的邮箱 `/login` 也返回同一句错误（理论上 v0.4 后不存在这种状态，但保留兜底）
 - 失败计数复用 `loginFails`（不重新发明）
 
 **3. 验证码登录（`/verify`，折叠为"其他方式"，仅老用户应急）**：
 - `Login.vue` → "其他方式" Tab → 邮箱 + 6 位码 → `/verify`
-- **v0.3 之后**：仅供老用户 / 设备迁移应急使用，新用户必须走注册设密
+- **v0.4 之后**：仅供老用户 / 设备迁移应急使用，新用户必须走注册设密
 - `Login.vue` 验证码 Tab 顶部加黄色提示框："仅老用户应急 / 设备迁移使用"
 
 #### Session 持久化（与 v0.2 一致）

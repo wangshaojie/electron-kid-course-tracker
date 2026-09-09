@@ -314,6 +314,20 @@ export async function setPassword(email: string, code: string, password: string)
   return { ok: true }
 }
 
+/**
+ * 已 verify 完设密（注册流程用）
+ * - 走 /set-password 但带 Bearer JWT（已 verify 拿到的 token）
+ * - 后端不消耗 OTP，body.email 必须与 JWT.email 一致
+ * - 邮箱已注册 → 409 email_already_registered
+ */
+export async function setPasswordWithAuth(email: string, password: string): Promise<PasswordSetResult> {
+  const { status, json } = await postOtpAuth('/set-password', { email, password })
+  if (status >= 400 || json.error) {
+    return { ok: false, error: translateOtpError(json.error, status) }
+  }
+  return { ok: true }
+}
+
 /** 忘记密码重置（后端与 set-password 同逻辑，前端文案不同） */
 export async function resetPassword(email: string, code: string, password: string): Promise<PasswordSetResult> {
   const { status, json } = await postOtp('/reset-password', { email, code, password })

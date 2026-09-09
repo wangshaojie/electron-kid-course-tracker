@@ -1,17 +1,17 @@
 <script setup lang="ts">
 /**
- * RegisterDialog.vue —— 注册弹窗（密码为主，邮箱验证码为辅）
+ * RegisterDialog.vue —— 注册弹窗（v0.4+：先验证邮箱，再设置密码）
  *
  * 流程：
- *  - Step 1: 邮箱 + 密码 + 确认密码（一次性输完）
- *  - Step 2: 6 位邮箱验证码
+ *  - Step 1: 邮箱 + 收码 + 输 6 位验证码（前端仅校验格式，不发请求）
+ *  - Step 2: 密码 + 确认密码
  *  - Step 3: 成功 → Toast + 1.2s 自动关弹窗
  *
- * 后端：POST /register
- *  - 一次性走完：校验 OTP + 校验密码强度 + 检查邮箱未注册 + 写密码 + 签 JWT
- *  - 邮箱已注册 → 409 email_already_registered（让用户去登录/忘记密码）
- *  - 弱密码 → 400 weak_password
- *  - 成功返回与 /verify /login 完全一致（token/uid/email/role），前端可直接走 register 的后续逻辑
+ * 后端链路（store.register 内部组合）：
+ *  - 第 1 步：POST /verify → 消费 OTP + 签 JWT + 存 session
+ *  - 第 2 步：POST /set-password 带 Bearer JWT → 不消耗 OTP + 写密码
+ *  - 邮箱已注册（/set-password 返回 409）→ session 已存在但密码未设，引导去登录
+ *  - 弱密码（400 weak_password）→ 回 Step 2 重输
  */
 import { ref, computed, watch, onUnmounted, type Ref } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -29,9 +29,9 @@ const auth = useAuthStore()
 
 // 字段
 const email = ref('')
+const code = ref('')
 const password = ref('')
 const password2 = ref('')
-const code = ref('')
 const step = ref<1 | 2 | 3>(1)
 const sending = ref(false)
 const submitting = ref(false)
@@ -40,14 +40,16 @@ let cooldownTimer: number | null = null
 
 // 校验
 const emailValid = computed(() => isValidEmail(email.value.trim()))
+const codeValid = computed(() => /^\d{6}$/.test(code.value))
 const pwValid = computed(
   () => password.value.length >= 8 && /[A-Za-z]/.test(password.value) && /\d/.test(password.value),
 )
 const pwMatch = computed(() => password.value === password2.value)
-const codeValid = computed(() => /^\d{6}$/.test(code.value))
-const canGoNext1 = computed(() => emailValid.value && pwValid.value && pwMatch.value && !sending.value)
+const canGoNext1 = computed(() => emailValid.value && codeValid.value && !sending.value)
 const canSend = computed(() => emailValid.value && !sending.value && cooldown.value === 0)
-const canSubmit = computed(() => emailValid.value && codeValid.value && !submitting.value)
+const canSubmit = computed(
+  () => emailValid.value && pwValid.value && pwMatch.value && !submitting.value,
+)
 
 function startCooldown(cd: Ref<number>, sec: number) {
   cd.value = sec
@@ -64,9 +66,9 @@ function startCooldown(cd: Ref<number>, sec: number) {
 
 function reset() {
   email.value = ''
+  code.value = ''
   password.value = ''
   password2.value = ''
-  code.value = ''
   step.value = 1
   if (cooldownTimer !== null) {
     window.clearInterval(cooldownTimer)
@@ -115,11 +117,17 @@ async function onSubmit() {
   try {
     const r = await auth.register(email.value.trim(), code.value, password.value, true)
     if (r.error) {
-      // 邮箱已注册这种要回 step 1 提示用户去登录 / 忘记密码
+      // 邮箱已注册（409）：store 内部已经在 /verify 成功后写入了 session；
+      // 提示用户回登录页登录即可，留在本弹窗里无意义。
       if (r.error.includes('已注册')) {
+        ElMessage.warning('该邮箱已注册，请直接登录或找回密码')
+        // 关闭弹窗由父组件通过 success 触发后处理；这里给个重置引导
         step.value = 1
+        // 邮箱已注册时，store 实际上已经处于 authenticated 态，让父组件拿到 success 后再处理
+        // 这里不强退：业务上"邮箱已注册"是用户友好提示，不阻断他们继续使用
+      } else {
+        ElMessage.error(r.error)
       }
-      ElMessage.error(r.error)
       return
     }
     step.value = 3
@@ -151,12 +159,12 @@ async function onSubmit() {
       finish-status="success"
       class="reg-steps"
     >
-      <el-step title="设置密码" />
       <el-step title="验证邮箱" />
+      <el-step title="设置密码" />
     </el-steps>
 
     <div v-show="step === 1" class="reg-body">
-      <p class="hint">输入邮箱 + 密码完成注册。密码至少 8 位，包含字母和数字。</p>
+      <p class="hint">先通过邮箱验证码确认您是该邮箱的所有者，再设置密码。</p>
       <el-form label-position="top" @submit.prevent="goNext1">
         <el-form-item label="邮箱">
           <el-input
@@ -170,34 +178,29 @@ async function onSubmit() {
           />
         </el-form-item>
 
-        <el-form-item label="密码">
-          <el-input
-            v-model="password"
-            type="password"
-            placeholder="至少 8 位，含字母和数字"
-            autocomplete="new-password"
-            show-password
-            :clearable="true"
-            :disabled="sending"
-            @keyup.enter="goNext1"
-          />
+        <el-form-item label="邮箱验证码">
+          <div class="code-row">
+            <el-input
+              v-model="code"
+              placeholder="6 位数字"
+              maxlength="6"
+              autocomplete="one-time-code"
+              :clearable="false"
+              :disabled="sending"
+              class="code-input"
+              @keyup.enter="goNext1"
+            />
+            <el-button
+              :type="canSend ? 'primary' : 'default'"
+              :loading="sending"
+              :disabled="!canSend"
+              class="send-btn"
+              @click="onSend"
+            >
+              {{ cooldown > 0 ? `${cooldown}s 后重发` : '获取验证码' }}
+            </el-button>
+          </div>
         </el-form-item>
-
-        <el-form-item label="确认密码">
-          <el-input
-            v-model="password2"
-            type="password"
-            placeholder="再次输入密码"
-            autocomplete="new-password"
-            show-password
-            :clearable="true"
-            :disabled="sending"
-            @keyup.enter="goNext1"
-          />
-        </el-form-item>
-
-        <p v-if="password && !pwValid" class="pw-error">密码需至少 8 位，并包含字母和数字</p>
-        <p v-else-if="password2 && !pwMatch" class="pw-error">两次输入的密码不一致</p>
 
         <el-button
           type="primary"
@@ -212,31 +215,36 @@ async function onSubmit() {
     </div>
 
     <div v-show="step === 2" class="reg-body">
-      <p class="hint">验证码已发送至 <b>{{ email }}</b>，10 分钟内有效</p>
+      <p class="hint">邮箱 <b>{{ email }}</b> 已验证。密码至少 8 位，包含字母和数字。</p>
       <el-form label-position="top" @submit.prevent="onSubmit">
-        <el-form-item label="邮箱验证码">
-          <div class="code-row">
-            <el-input
-              v-model="code"
-              placeholder="6 位数字"
-              maxlength="6"
-              autocomplete="one-time-code"
-              :clearable="false"
-              :disabled="submitting"
-              class="code-input"
-              @keyup.enter="onSubmit"
-            />
-            <el-button
-              :type="canSend ? 'primary' : 'default'"
-              :loading="sending"
-              :disabled="!canSend"
-              class="send-btn"
-              @click="onSend"
-            >
-              {{ cooldown > 0 ? `${cooldown}s 后重发` : '重新发送' }}
-            </el-button>
-          </div>
+        <el-form-item label="密码">
+          <el-input
+            v-model="password"
+            type="password"
+            placeholder="至少 8 位，含字母和数字"
+            autocomplete="new-password"
+            show-password
+            :clearable="true"
+            :disabled="submitting"
+            @keyup.enter="onSubmit"
+          />
         </el-form-item>
+
+        <el-form-item label="确认密码">
+          <el-input
+            v-model="password2"
+            type="password"
+            placeholder="再次输入密码"
+            autocomplete="new-password"
+            show-password
+            :clearable="true"
+            :disabled="submitting"
+            @keyup.enter="onSubmit"
+          />
+        </el-form-item>
+
+        <p v-if="password && !pwValid" class="pw-error">密码需至少 8 位，并包含字母和数字</p>
+        <p v-else-if="password2 && !pwMatch" class="pw-error">两次输入的密码不一致</p>
 
         <div class="reg-actions">
           <el-button size="large" :disabled="submitting" @click="goPrev2">上一步</el-button>

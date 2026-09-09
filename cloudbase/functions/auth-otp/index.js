@@ -506,19 +506,63 @@ async function handlePasswordStatus(req, res) {
   }
 }
 
-// 设置 / 修改 / 重置密码：必须先用 6 位验证码确认邮箱所有权（复用 OTP 限流）
+// 设置 / 修改 / 重置密码：两条入口
+//   1) Bearer 路径（v0.4+）：已通过 /verify 拿到 JWT，可直接写密码，免输第二遍码
+//      - 用途：注册流程（verifyCode → setPasswordWithAuth）一步走完
+//      - 校验：JWT 有效 + body.email 与 JWT.email 一致（防止 A 拿 token 给 B 设密）
+//      - 注册场景必须先 check 邮箱未注册（沿用 /register 的"邮箱已注册 → 409"语义）
+//   2) OTP 路径（v0.3）：6 位验证码确认邮箱所有权（复用 OTP 限流）
+//      - 用途：ForgotPasswordDialog、首次设置密码（无 session）
 // /set-password 与 /reset-password 共用（前端文案不同）
 async function handleSetPassword(req, res, body) {
+  const password = String(body.password || '')
+  if (!isValidPassword(password)) return sendJson(res, 400, { error: 'weak_password' }, req)
+
+  // 先尝试 Bearer 路径
+  const bearer = verifyBearer(req)
+  if (bearer.ok) {
+    const bodyEmail = String(body.email || '').trim().toLowerCase()
+    if (!isValidEmail(bodyEmail)) return sendJson(res, 400, { error: 'invalid_email' }, req)
+    // 防 A 用自己 token 给 B 设密：body.email 必须与 JWT.email 一致
+    if (bodyEmail !== bearer.email) {
+      return sendJson(res, 403, { error: 'email_mismatch' }, req)
+    }
+    const email = bearer.email
+    // 注册场景：邮箱已注册 = 409（沿用 /register 语义）
+    try {
+      const q = await rdb().from('user_passwords').select('email').eq('email', email).limit(1)
+      if (q && q.error) throw new Error(q.error.message || JSON.stringify(q.error))
+      const exists = Array.isArray(q.data) ? q.data.length > 0 : !!q.data
+      // 区分两个意图：
+      //   - 显式 mode='register' → 邮箱已存在 = 409
+      //   - 默认（changePassword/setPassword） → 邮箱已存在 = 改密路径，正常 upsert
+      // 当前 /set-password 走的就是"已 verify 完要设密"的注册场景，未注册的人 verify 也会通过，
+      // 所以已注册 = 409
+      if (exists) {
+        return sendJson(res, 409, { error: 'email_already_registered' }, req)
+      }
+    } catch (e) {
+      console.error('[set-password:bearer] rdb.select error:', e)
+      return sendJson(res, 500, { error: 'db_error' }, req)
+    }
+    // 写密码
+    return await writePassword(res, req, email, password)
+  }
+
+  // OTP 路径（无 Bearer 或 Bearer 无效）
   const email = (body.email || '').trim().toLowerCase()
   const code = String(body.code || '').trim()
-  const password = String(body.password || '')
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' }, req)
   if (!/^\d{6}$/.test(code)) return sendJson(res, 400, { error: 'invalid_code' }, req)
-  if (!isValidPassword(password)) return sendJson(res, 400, { error: 'weak_password' }, req)
 
   const r = await verifyOtpAndConsume(email, code)
   if (!r.ok) return sendJson(res, r.status, { error: r.error }, req)
 
+  return await writePassword(res, req, email, password)
+}
+
+// 写密码（upsert user_passwords）—— Bearer / OTP 两条路径共用
+async function writePassword(res, req, email, password) {
   const hash = hashPassword(password)
   const now = new Date().toISOString()
   try {
