@@ -63,8 +63,8 @@ function statusLabel(s: CourseSummary) {
   <div>
     <div class="mb-4 flex items-center justify-between">
       <div>
-        <h2 class="text-lg font-bold" style="color: #fff;">课程列表</h2>
-        <p class="text-sm" style="color: rgba(255,255,255,0.5);">共 {{ courses.count }} 个课程</p>
+        <h2 class="text-lg font-bold text-dark-title">课程列表</h2>
+        <p class="text-sm" style="color: var(--text-soft);">共 {{ courses.count }} 个课程</p>
       </div>
       <button class="btn-dark-primary" @click="openCreate">
         <span class="mr-1">+</span> 新增课程
@@ -88,8 +88,8 @@ function statusLabel(s: CourseSummary) {
       <el-table-column prop="name" label="课程名称" min-width="160">
         <template #default="{ row }">
           <div>
-            <p class="font-medium" style="color: #fff;">{{ row.name }}</p>
-            <p v-if="row.institution" class="text-xs" style="color: rgba(255,255,255,0.4);">
+            <p class="font-medium text-dark-title">{{ row.name }}</p>
+            <p v-if="row.institution" class="text-xs" style="color: var(--text-soft);">
               {{ row.institution }}
             </p>
           </div>
@@ -99,10 +99,10 @@ function statusLabel(s: CourseSummary) {
       <el-table-column label="费用 / 课时" width="220">
         <template #default="{ row }">
           <div class="text-sm">
-            <p style="color: rgba(255,255,255,0.85);">
+            <p style="color: var(--text-body);">
               {{ formatMoney(row.total_amount) }} · {{ formatHours(row.total_hours) }}
             </p>
-            <p class="text-xs" style="color: rgba(255,255,255,0.4);">
+            <p class="text-xs" style="color: var(--text-soft);">
               单节 {{ formatMoney(row.price_per_hour) }}
             </p>
           </div>
@@ -115,7 +115,7 @@ function statusLabel(s: CourseSummary) {
             <p class="font-semibold" :style="{ color: statusLabel(row).cls }">
               {{ statusLabel(row).text }}
             </p>
-            <p class="text-xs" style="color: rgba(255,255,255,0.4);">
+            <p class="text-xs" style="color: var(--text-soft);">
               已用 {{ formatHours(row.used_hours) }} / 剩 {{ formatHours(row.remain_hours) }}
             </p>
           </div>
@@ -124,7 +124,7 @@ function statusLabel(s: CourseSummary) {
 
       <el-table-column label="日期" width="180">
         <template #default="{ row }">
-          <div class="text-xs" style="color: rgba(255,255,255,0.6);">
+          <div class="text-xs" style="color: var(--text-body);">
             <p>缴费 {{ row.paid_at }}</p>
             <p v-if="row.expires_at">到期 {{ row.expires_at }}</p>
             <p v-else>无到期日</p>

@@ -1,0 +1,510 @@
+/* ===========================================================================
+   theme.css —— 主题变量
+   1) 浅色 (.light / [data-theme="light"]) 写在 :root 默认,跟 el-* 兼容
+   2) 深色 ([data-theme="dark"]) 在 :root[data-theme="dark"] 覆盖
+   3) 跟随系统 (无 data-theme) 用 @media prefers-color-scheme
+   4) 组件样式用 var(--xxx) 引用,不要硬编码颜色
+   =========================================================================== */
+
+:root,
+[data-theme='light'] {
+  /* ---- 页面 ---- */
+  --page-bg-base: #F7FAF8;
+  --page-bg-1: #FFFFFF;
+  --page-bg-2: #F2F7F4;
+  --page-bg-grad-from: #F7FAF8;
+  --page-bg-grad-to: #ECF3EE;
+  --page-glow-green: rgba(63, 184, 122, 0.06);
+  --page-glow-sun:   rgba(224, 138, 30, 0.04);
+  --page-glow-purple: rgba(107, 91, 255, 0.03);
+  --page-noise-opacity: 0;
+
+  /* ---- 侧栏 ---- */
+  --aside-bg: rgba(255, 255, 255, 0.78);
+  --aside-border: rgba(0, 0, 0, 0.06);
+
+  /* ---- 玻璃卡片 ---- */
+  --card-bg: rgba(255, 255, 255, 0.72);
+  --card-border: rgba(0, 0, 0, 0.06);
+  --card-border-hover: rgba(0, 0, 0, 0.1);
+  --card-shadow:
+    0 1px 2px rgba(15, 23, 42, 0.04),
+    0 8px 24px -12px rgba(15, 23, 42, 0.08),
+    inset 0 1px 0 rgba(255, 255, 255, 0.6);
+  --card-shadow-hover:
+    0 1px 2px rgba(15, 23, 42, 0.05),
+    0 12px 32px -12px rgba(15, 23, 42, 0.12),
+    inset 0 1px 0 rgba(255, 255, 255, 0.7);
+
+  /* ---- 文字 ---- */
+  --text-title: #1f2937;
+  --text-body:  #4b5563;
+  --text-soft:  #6b7280;
+  --text-ghost: #9ca3af;
+  --text-mute:  #d1d5db;
+  --text-on-primary: #ffffff;       /* primary 按钮上的文字 */
+
+  /* ---- 边框 / 分隔 ---- */
+  --divider:        rgba(0, 0, 0, 0.06);
+  --divider-strong: rgba(0, 0, 0, 0.1);
+
+  /* ---- 主色(品牌薄荷绿) ---- */
+  --brand-1: #3FB87A;
+  --brand-2: #5FCE89;
+  --brand-3: #94DFB0;
+  --brand-soft-bg:   rgba(63, 184, 122, 0.08);
+  --brand-soft-bg-2: rgba(63, 184, 122, 0.16);
+  --brand-soft-border: rgba(63, 184, 122, 0.25);
+  --brand-on-bg: #2A9D63;
+  --brand-text: #2A9D63;
+
+  /* ---- 暖橙(低课时警告) ---- */
+  --sun-1: #E08A1E;
+  --sun-2: #FFB347;
+  --sun-glow: rgba(224, 138, 30, 0.35);
+
+  /* ---- 红色(过期 / 危险) ---- */
+  --danger-1: #D94545;
+  --danger-2: #FF7A7A;
+  --danger-soft-bg:   rgba(217, 69, 69, 0.06);
+  --danger-soft-bg-2: rgba(217, 69, 69, 0.12);
+  --danger-soft-border: rgba(217, 69, 69, 0.3);
+  --danger-text: #D94545;
+  --danger-text-hover: #B53030;
+
+  /* ---- 输入框 / 按钮底色(浅色版) ---- */
+  --input-bg: #ffffff;
+  --input-bg-hover: #ffffff;
+  --input-border: #e5e7eb;
+  --input-border-hover: #cbd5e1;
+  --input-border-focus: var(--brand-1);
+  --input-focus-ring: rgba(63, 184, 122, 0.18);
+  --input-text: #1f2937;
+  --input-placeholder: #9ca3af;
+  --input-suffix: #9ca3af;
+
+  /* ---- 按钮 ---- */
+  --btn-ghost-bg: rgba(0, 0, 0, 0.03);
+  --btn-ghost-bg-hover: rgba(0, 0, 0, 0.06);
+  --btn-ghost-border: rgba(0, 0, 0, 0.1);
+  --btn-ghost-border-hover: rgba(0, 0, 0, 0.18);
+  --btn-ghost-text: #4b5563;
+  --btn-ghost-text-hover: #1f2937;
+
+  /* ---- 弹层 / dropdown / date-picker / dialog ---- */
+  --popper-bg: #ffffff;
+  --popper-border: rgba(0, 0, 0, 0.1);
+  --popper-shadow: 0 12px 32px -8px rgba(15, 23, 42, 0.18);
+  --popper-text: #1f2937;
+  --popper-item-hover: rgba(63, 184, 122, 0.08);
+  --popper-item-selected-text: var(--brand-text);
+
+  /* ---- dialog ---- */
+  --dialog-bg: #ffffff;
+  --dialog-border: rgba(0, 0, 0, 0.08);
+  --dialog-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.25);
+  --dialog-overlay: rgba(15, 23, 42, 0.45);
+
+  /* ---- message-box ---- */
+  --message-box-bg: #ffffff;
+  --message-box-text: #1f2937;
+
+  /* ---- el-message(toast, 始终浅色,跨主题一致)---- */
+  --message-bg: #ffffff;
+  --message-border: rgba(0, 0, 0, 0.06);
+  --message-text: #1f2937;
+
+  /* ---- table ---- */
+  --table-bg: transparent;
+  --table-header-bg: rgba(0, 0, 0, 0.025);
+  --table-header-text: #6b7280;
+  --table-row-text: #1f2937;
+  --table-row-stripe: rgba(0, 0, 0, 0.02);
+  --table-row-hover: rgba(63, 184, 122, 0.06);
+  --table-border: rgba(0, 0, 0, 0.06);
+
+  /* ---- 进度条 ---- */
+  --progress-track: rgba(0, 0, 0, 0.06);
+  --progress-shadow-inset: inset 0 1px 0 rgba(255, 255, 255, 0.4);
+  --progress-highlight: rgba(255, 255, 255, 0.6);
+
+  /* ---- 渐变数字 ---- */
+  --num-grad-from: #1f2937;
+  --num-grad-to:   var(--brand-on-bg);
+  --num-grad-sun-from: #B9730F;
+  --num-grad-sun-to:   #E08A1E;
+  --num-grad-danger-from: #B53030;
+  --num-grad-danger-to:   #D94545;
+
+  /* ---- 启动兜底 ---- */
+  --boot-splash-bg: #F7FAF8;
+
+  /* ---- 首次启动引导页 ---- */
+  --onboard-bg: #F7FAF8;
+  --onboard-title: #1f2937;
+  --onboard-sub: #6b7280;
+
+  /* ---- 导航选中 ---- */
+  --nav-active-bg-from: rgba(63, 184, 122, 0.18);
+  --nav-active-bg-to:   rgba(63, 184, 122, 0.08);
+  --nav-active-border: rgba(63, 184, 122, 0.3);
+  --nav-active-text: #1f2937;
+  --nav-text: #6b7280;
+  --nav-text-hover: #1f2937;
+
+  /* ---- 用户名/登出文字 ---- */
+  --user-email: #6b7280;
+  --user-avatar-bg: rgba(63, 184, 122, 0.18);
+  --user-avatar-text: #2A9D63;
+  --logout-text: #6b7280;
+  --logout-text-hover: #1f2937;
+
+  /* ---- 阴影 ring(强调选中)---- */
+  --glow-ring-from: #5FCE89;
+  --glow-ring-to:   #3FB87A;
+
+  /* ---- scrollbar ---- */
+  --scrollbar-thumb: rgba(0, 0, 0, 0.12);
+  --scrollbar-thumb-hover: rgba(0, 0, 0, 0.2);
+
+  /* ---- Element Plus CSS 变量(浅色版)---- */
+  --el-color-primary: #3FB87A;
+  --el-color-primary-light-3: #5FCE89;
+  --el-color-primary-light-5: #94DFB0;
+  --el-color-primary-light-7: #C5EFD5;
+  --el-color-primary-light-8: #EAF8F0;
+  --el-color-primary-light-9: #F4FBF7;
+  --el-color-primary-dark-2: #2A9D63;
+  --el-color-success: #3FB87A;
+  --el-color-warning: #E08A1E;
+  --el-color-danger: #D94545;
+  --el-text-color-primary: #1f2937;
+  --el-text-color-regular: #4b5563;
+  --el-text-color-secondary: #6b7280;
+  --el-text-color-placeholder: #9ca3af;
+  --el-border-color: #e5e7eb;
+  --el-border-color-light: #f3f4f6;
+  --el-border-color-lighter: #f9fafb;
+  --el-fill-color-blank: #ffffff;
+  --el-bg-color: #ffffff;
+  --el-bg-color-page: #F7FAF8;
+}
+
+/* ----- 深色主题覆盖 ----- */
+:root[data-theme='dark'] {
+  /* ---- 页面 ---- */
+  --page-bg-base: #0a0e1a;
+  --page-bg-1: #1a1f2e;
+  --page-bg-2: #0d1320;
+  --page-bg-grad-from: #0a0e1a;
+  --page-bg-grad-to: #0d1320;
+  --page-glow-green: rgba(63, 184, 122, 0.12);
+  --page-glow-sun:   rgba(224, 138, 30, 0.08);
+  --page-glow-purple: rgba(107, 91, 255, 0.06);
+  --page-noise-opacity: 0.03;
+
+  /* ---- 侧栏 ---- */
+  --aside-bg: rgba(10, 14, 26, 0.6);
+  --aside-border: rgba(255, 255, 255, 0.06);
+
+  /* ---- 玻璃卡片 ---- */
+  --card-bg: rgba(255, 255, 255, 0.04);
+  --card-border: rgba(255, 255, 255, 0.08);
+  --card-border-hover: rgba(255, 255, 255, 0.12);
+  --card-shadow:
+    0 8px 24px -8px rgba(0, 0, 0, 0.4),
+    inset 0 1px 0 rgba(255, 255, 255, 0.05);
+  --card-shadow-hover:
+    0 12px 32px -8px rgba(0, 0, 0, 0.5),
+    inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+  /* ---- 文字 ---- */
+  --text-title: #ffffff;
+  --text-body:  rgba(255, 255, 255, 0.75);
+  --text-soft:  rgba(255, 255, 255, 0.55);
+  --text-ghost: rgba(255, 255, 255, 0.3);
+  --text-mute:  rgba(255, 255, 255, 0.15);
+  --text-on-primary: #0a0e1a;
+
+  /* ---- 边框 / 分隔 ---- */
+  --divider:        rgba(255, 255, 255, 0.06);
+  --divider-strong: rgba(255, 255, 255, 0.12);
+
+  /* ---- 主色 ---- */
+  --brand-1: #3FB87A;
+  --brand-2: #5FCE89;
+  --brand-3: #94DFB0;
+  --brand-soft-bg:   rgba(63, 184, 122, 0.08);
+  --brand-soft-bg-2: rgba(63, 184, 122, 0.16);
+  --brand-soft-border: rgba(63, 184, 122, 0.3);
+  --brand-on-bg: #C5EFD5;
+  --brand-text: #5FCE89;
+
+  /* ---- 暖橙 ---- */
+  --sun-1: #E08A1E;
+  --sun-2: #FFB347;
+  --sun-glow: rgba(224, 138, 30, 0.5);
+
+  /* ---- 红色 ---- */
+  --danger-1: #D94545;
+  --danger-2: #FF7A7A;
+  --danger-soft-bg:   rgba(217, 69, 69, 0.1);
+  --danger-soft-bg-2: rgba(217, 69, 69, 0.2);
+  --danger-soft-border: rgba(217, 69, 69, 0.3);
+  --danger-text: #FF7A7A;
+  --danger-text-hover: #FF9999;
+
+  /* ---- 输入框 ---- */
+  --input-bg: rgba(255, 255, 255, 0.04);
+  --input-bg-hover: rgba(255, 255, 255, 0.06);
+  --input-border: rgba(255, 255, 255, 0.1);
+  --input-border-hover: rgba(255, 255, 255, 0.18);
+  --input-border-focus: var(--brand-1);
+  --input-focus-ring: rgba(63, 184, 122, 0.12);
+  --input-text: #ffffff;
+  --input-placeholder: rgba(255, 255, 255, 0.3);
+  --input-suffix: rgba(255, 255, 255, 0.4);
+
+  /* ---- 按钮 ---- */
+  --btn-ghost-bg: rgba(255, 255, 255, 0.04);
+  --btn-ghost-bg-hover: rgba(255, 255, 255, 0.08);
+  --btn-ghost-border: rgba(255, 255, 255, 0.12);
+  --btn-ghost-border-hover: rgba(255, 255, 255, 0.2);
+  --btn-ghost-text: rgba(255, 255, 255, 0.8);
+  --btn-ghost-text-hover: #ffffff;
+
+  /* ---- 弹层 ---- */
+  --popper-bg: #1a1f2e;
+  --popper-border: rgba(255, 255, 255, 0.1);
+  --popper-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+  --popper-text: #ffffff;
+  --popper-item-hover: rgba(63, 184, 122, 0.12);
+  --popper-item-selected-text: #5FCE89;
+
+  /* ---- dialog ---- */
+  --dialog-bg: #1a1f2e;
+  --dialog-border: rgba(255, 255, 255, 0.08);
+  --dialog-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+  --dialog-overlay: rgba(5, 8, 16, 0.7);
+
+  /* ---- message-box ---- */
+  --message-box-bg: #1a1f2e;
+  --message-box-text: #ffffff;
+
+  /* ---- el-message(toast 跨主题一致,固定浅色)---- */
+  --message-bg: #ffffff;
+  --message-border: rgba(0, 0, 0, 0.06);
+  --message-text: #1f2937;
+
+  /* ---- table ---- */
+  --table-bg: transparent;
+  --table-header-bg: rgba(255, 255, 255, 0.04);
+  --table-header-text: rgba(255, 255, 255, 0.55);
+  --table-row-text: rgba(255, 255, 255, 0.85);
+  --table-row-stripe: rgba(255, 255, 255, 0.02);
+  --table-row-hover: rgba(63, 184, 122, 0.08);
+  --table-border: rgba(255, 255, 255, 0.06);
+
+  /* ---- 进度条 ---- */
+  --progress-track: rgba(255, 255, 255, 0.06);
+  --progress-shadow-inset: inset 0 1px 0 rgba(0, 0, 0, 0.2);
+  --progress-highlight: rgba(255, 255, 255, 0.25);
+
+  /* ---- 渐变数字 ---- */
+  --num-grad-from: #ffffff;
+  --num-grad-to:   #C5EFD5;
+  --num-grad-sun-from: #FFD596;
+  --num-grad-sun-to:   #FFB347;
+  --num-grad-danger-from: #FFB5B5;
+  --num-grad-danger-to:   #FF7A7A;
+
+  /* ---- 启动兜底 ---- */
+  --boot-splash-bg: #0a0e1a;
+
+  /* ---- 首次启动引导页 ---- */
+  --onboard-bg: #0a0e1a;
+  --onboard-title: #ffffff;
+  --onboard-sub: rgba(255, 255, 255, 0.65);
+
+  /* ---- 导航 ---- */
+  --nav-active-bg-from: rgba(63, 184, 122, 0.18);
+  --nav-active-bg-to:   rgba(63, 184, 122, 0.08);
+  --nav-active-border: rgba(63, 184, 122, 0.25);
+  --nav-active-text: #ffffff;
+  --nav-text: rgba(255, 255, 255, 0.55);
+  --nav-text-hover: rgba(255, 255, 255, 0.85);
+
+  /* ---- 用户名/登出文字 ---- */
+  --user-email: rgba(255, 255, 255, 0.55);
+  --user-avatar-bg: rgba(63, 184, 122, 0.2);
+  --user-avatar-text: #5FCE89;
+  --logout-text: rgba(255, 255, 255, 0.55);
+  --logout-text-hover: #ffffff;
+
+  /* ---- 阴影 ring ---- */
+  --glow-ring-from: #5FCE89;
+  --glow-ring-to:   #3FB87A;
+
+  /* ---- scrollbar ---- */
+  --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+  --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
+
+  /* ---- Element Plus CSS 变量(深色版)---- */
+  --el-color-primary: #3FB87A;
+  --el-color-primary-light-3: #5FCE89;
+  --el-color-primary-light-5: #94DFB0;
+  --el-color-primary-light-7: #C5EFD5;
+  --el-color-primary-light-8: #EAF8F0;
+  --el-color-primary-light-9: #F4FBF7;
+  --el-color-primary-dark-2: #2A9D63;
+  --el-color-success: #3FB87A;
+  --el-color-warning: #E08A1E;
+  --el-color-danger: #D94545;
+  --el-text-color-primary: #ffffff;
+  --el-text-color-regular: rgba(255, 255, 255, 0.85);
+  --el-text-color-secondary: rgba(255, 255, 255, 0.65);
+  --el-text-color-placeholder: rgba(255, 255, 255, 0.3);
+  --el-border-color: rgba(255, 255, 255, 0.1);
+  --el-border-color-light: rgba(255, 255, 255, 0.06);
+  --el-border-color-lighter: rgba(255, 255, 255, 0.04);
+  --el-fill-color-blank: rgba(255, 255, 255, 0.04);
+  --el-bg-color: #1a1f2e;
+  --el-bg-color-page: #0a0e1a;
+}
+
+/* ----- 跟随系统 ----- */
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme]) {
+    /* 浅色变量就是 :root 默认,这里只需标记,避免覆盖被搞错 */
+  }
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    /* 没设 data-theme 时跟随系统=深色,直接复用 :root[data-theme='dark'] 变量 */
+    --page-bg-base: #0a0e1a;
+    --page-bg-1: #1a1f2e;
+    --page-bg-2: #0d1320;
+    --page-bg-grad-from: #0a0e1a;
+    --page-bg-grad-to: #0d1320;
+    --page-glow-green: rgba(63, 184, 122, 0.12);
+    --page-glow-sun:   rgba(224, 138, 30, 0.08);
+    --page-glow-purple: rgba(107, 91, 255, 0.06);
+    --page-noise-opacity: 0.03;
+
+    --aside-bg: rgba(10, 14, 26, 0.6);
+    --aside-border: rgba(255, 255, 255, 0.06);
+
+    --card-bg: rgba(255, 255, 255, 0.04);
+    --card-border: rgba(255, 255, 255, 0.08);
+    --card-border-hover: rgba(255, 255, 255, 0.12);
+    --card-shadow:
+      0 8px 24px -8px rgba(0, 0, 0, 0.4),
+      inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --card-shadow-hover:
+      0 12px 32px -8px rgba(0, 0, 0, 0.5),
+      inset 0 1px 0 rgba(255, 255, 255, 0.07);
+
+    --text-title: #ffffff;
+    --text-body:  rgba(255, 255, 255, 0.75);
+    --text-soft:  rgba(255, 255, 255, 0.55);
+    --text-ghost: rgba(255, 255, 255, 0.3);
+    --text-mute:  rgba(255, 255, 255, 0.15);
+    --text-on-primary: #0a0e1a;
+
+    --divider:        rgba(255, 255, 255, 0.06);
+    --divider-strong: rgba(255, 255, 255, 0.12);
+
+    --brand-soft-bg:   rgba(63, 184, 122, 0.08);
+    --brand-soft-bg-2: rgba(63, 184, 122, 0.16);
+    --brand-soft-border: rgba(63, 184, 122, 0.3);
+    --brand-on-bg: #C5EFD5;
+    --brand-text: #5FCE89;
+
+    --danger-soft-bg:   rgba(217, 69, 69, 0.1);
+    --danger-soft-bg-2: rgba(217, 69, 69, 0.2);
+    --danger-soft-border: rgba(217, 69, 69, 0.3);
+    --danger-text: #FF7A7A;
+    --danger-text-hover: #FF9999;
+
+    --input-bg: rgba(255, 255, 255, 0.04);
+    --input-bg-hover: rgba(255, 255, 255, 0.06);
+    --input-border: rgba(255, 255, 255, 0.1);
+    --input-border-hover: rgba(255, 255, 255, 0.18);
+    --input-focus-ring: rgba(63, 184, 122, 0.12);
+    --input-text: #ffffff;
+    --input-placeholder: rgba(255, 255, 255, 0.3);
+    --input-suffix: rgba(255, 255, 255, 0.4);
+
+    --btn-ghost-bg: rgba(255, 255, 255, 0.04);
+    --btn-ghost-bg-hover: rgba(255, 255, 255, 0.08);
+    --btn-ghost-border: rgba(255, 255, 255, 0.12);
+    --btn-ghost-border-hover: rgba(255, 255, 255, 0.2);
+    --btn-ghost-text: rgba(255, 255, 255, 0.8);
+    --btn-ghost-text-hover: #ffffff;
+
+    --popper-bg: #1a1f2e;
+    --popper-border: rgba(255, 255, 255, 0.1);
+    --popper-shadow: 0 12px 32px -8px rgba(0, 0, 0, 0.5);
+    --popper-text: #ffffff;
+    --popper-item-hover: rgba(63, 184, 122, 0.12);
+    --popper-item-selected-text: #5FCE89;
+
+    --dialog-bg: #1a1f2e;
+    --dialog-border: rgba(255, 255, 255, 0.08);
+    --dialog-shadow: 0 24px 60px -12px rgba(0, 0, 0, 0.6);
+    --dialog-overlay: rgba(5, 8, 16, 0.7);
+
+    --message-box-bg: #1a1f2e;
+    --message-box-text: #ffffff;
+
+    --table-header-bg: rgba(255, 255, 255, 0.04);
+    --table-header-text: rgba(255, 255, 255, 0.55);
+    --table-row-text: rgba(255, 255, 255, 0.85);
+    --table-row-stripe: rgba(255, 255, 255, 0.02);
+    --table-row-hover: rgba(63, 184, 122, 0.08);
+    --table-border: rgba(255, 255, 255, 0.06);
+
+    --progress-track: rgba(255, 255, 255, 0.06);
+    --progress-shadow-inset: inset 0 1px 0 rgba(0, 0, 0, 0.2);
+    --progress-highlight: rgba(255, 255, 255, 0.25);
+
+    --num-grad-from: #ffffff;
+    --num-grad-to:   #C5EFD5;
+    --num-grad-sun-from: #FFD596;
+    --num-grad-sun-to:   #FFB347;
+    --num-grad-danger-from: #FFB5B5;
+    --num-grad-danger-to:   #FF7A7A;
+
+    --boot-splash-bg: #0a0e1a;
+    --onboard-bg: #0a0e1a;
+    --onboard-title: #ffffff;
+    --onboard-sub: rgba(255, 255, 255, 0.65);
+
+    --nav-active-bg-from: rgba(63, 184, 122, 0.18);
+    --nav-active-bg-to:   rgba(63, 184, 122, 0.08);
+    --nav-active-border: rgba(63, 184, 122, 0.25);
+    --nav-active-text: #ffffff;
+    --nav-text: rgba(255, 255, 255, 0.55);
+    --nav-text-hover: rgba(255, 255, 255, 0.85);
+
+    --user-email: rgba(255, 255, 255, 0.55);
+    --user-avatar-bg: rgba(63, 184, 122, 0.2);
+    --user-avatar-text: #5FCE89;
+    --logout-text: rgba(255, 255, 255, 0.55);
+    --logout-text-hover: #ffffff;
+
+    --scrollbar-thumb: rgba(255, 255, 255, 0.1);
+    --scrollbar-thumb-hover: rgba(255, 255, 255, 0.18);
+
+    --el-text-color-primary: #ffffff;
+    --el-text-color-regular: rgba(255, 255, 255, 0.85);
+    --el-text-color-secondary: rgba(255, 255, 255, 0.65);
+    --el-text-color-placeholder: rgba(255, 255, 255, 0.3);
+    --el-border-color: rgba(255, 255, 255, 0.1);
+    --el-border-color-light: rgba(255, 255, 255, 0.06);
+    --el-border-color-lighter: rgba(255, 255, 255, 0.04);
+    --el-fill-color-blank: rgba(255, 255, 255, 0.04);
+    --el-bg-color: #1a1f2e;
+    --el-bg-color-page: #0a0e1a;
+  }
+}

@@ -33,3 +33,16 @@ skills-lock.json
 .vscode/
 .DS_Store
 Thumbs.db
+
+# === v0.4.6: vercel/ local debug artifacts (rerun/repro/queries) ===
+vercel/.repro*.out
+vercel/.envval.tmp
+vercel/logs.jsonl
+vercel/repro-admin.js
+vercel/repro-admin.cjs
+vercel/repro-admin-fix.cjs
+
+# === v0.4.6: theme-migration python caches ===
+desktop/scripts/theme-migration/__pycache__/
+desktop/scripts/theme-migration/*.pyc
+

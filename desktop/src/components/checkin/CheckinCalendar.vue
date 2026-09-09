@@ -95,20 +95,20 @@ function dayCellStyle(c: DayCell): Record<string, string> {
   const has = dayCheckins(c.date).length > 0
   if (c.isSelected) {
     return {
-      background: 'linear-gradient(135deg, rgba(63,184,122,0.18) 0%, rgba(63,184,122,0.06) 100%)',
-      border: '1px solid rgba(63,184,122,0.5)',
-      boxShadow: '0 0 0 2px rgba(63,184,122,0.25)',
+      background: 'linear-gradient(135deg, var(--brand-soft-bg-2) 0%, var(--brand-soft-bg) 100%)',
+      border: '1px solid var(--brand-1)',
+      boxShadow: '0 0 0 2px var(--brand-soft-border)',
     }
   }
   if (has) {
     return {
-      background: 'rgba(63,184,122,0.06)',
-      border: '1px solid rgba(63,184,122,0.18)',
+      background: 'var(--brand-soft-bg)',
+      border: '1px solid var(--brand-soft-border)',
     }
   }
   return {
-    background: 'rgba(255,255,255,0.02)',
-    border: '1px solid rgba(255,255,255,0.04)',
+    background: 'var(--btn-ghost-bg)',
+    border: '1px solid var(--divider)',
   }
 }
 
@@ -121,8 +121,8 @@ function dayNumStyle(c: DayCell): Record<string, string> {
       alignItems: 'center',
       justifyContent: 'center',
       borderRadius: '50%',
-      background: 'linear-gradient(135deg, #5FCE89 0%, #3FB87A 100%)',
-      color: '#0a0e1a',
+      background: 'linear-gradient(135deg, var(--brand-2) 0%, var(--brand-1) 100%)',
+      color: 'var(--text-on-primary)',
       fontSize: '11px',
       fontWeight: '700',
     }
@@ -130,7 +130,7 @@ function dayNumStyle(c: DayCell): Record<string, string> {
   return {
     fontSize: '12px',
     fontWeight: '500',
-    color: c.inMonth ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.2)',
+    color: c.inMonth ? 'var(--text-title)' : 'var(--text-mute)',
   }
 }
 </script>
@@ -142,7 +142,7 @@ function dayNumStyle(c: DayCell): Record<string, string> {
         v-for="w in WEEK_HEADS"
         :key="w"
         class="py-1 text-center text-xs font-medium"
-        style="color: rgba(255,255,255,0.4);"
+        style="color: var(--text-soft);"
       >
         周{{ w }}
       </div>
@@ -162,7 +162,7 @@ function dayNumStyle(c: DayCell): Record<string, string> {
           transition: 'all 0.15s ease',
         }"
         @click="emit('select-date', c.date)"
-        @mouseenter="(e) => { if (!c.isSelected) (e.currentTarget as HTMLElement).style.background = 'rgba(63,184,122,0.1)' }"
+        @mouseenter="(e) => { if (!c.isSelected) (e.currentTarget as HTMLElement).style.background = 'var(--brand-soft-bg-2)' }"
         @mouseleave="(e) => { (e.currentTarget as HTMLElement).style.background = dayCellStyle(c).background as string }"
       >
         <span :style="dayNumStyle(c)">{{ c.day }}</span>
@@ -184,7 +184,7 @@ function dayNumStyle(c: DayCell): Record<string, string> {
           <span
             v-if="dayAggs(c.date).length > 2"
             class="px-1 text-[10px] font-medium leading-4"
-            style="color: rgba(255,255,255,0.4);"
+            style="color: var(--text-soft);"
           >
             +{{ dayAggs(c.date).length - 2 }}
           </span>

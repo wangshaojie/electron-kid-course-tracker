@@ -16,6 +16,7 @@ import { useDBStore } from '@/stores/db'
 import { useChildrenStore } from '@/stores/children'
 import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
+import { useThemeStore } from '@/stores/theme'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -23,6 +24,7 @@ const db = useDBStore()
 const children = useChildrenStore()
 const courses = useCoursesStore()
 const checkins = useCheckinsStore()
+const theme = useThemeStore()
 
 const isLoginPage = computed(() => route.name === 'login')
 const initError = ref<string | null>(null)
@@ -52,6 +54,9 @@ async function loadBusinessData() {
     initError.value = null
     try {
       await db.init()
+      // 主题跟用户绑定:登录后从云端同步一次(多设备保持一致)
+      // 跟 children 并行,不顺延启动
+      void theme.syncFromCloud()
       await children.load()
       if (children.activeIdSafe) {
         await Promise.all([courses.refresh(), checkins.refresh()])
@@ -240,7 +245,7 @@ watch(
 .boot-splash {
   position: fixed;
   inset: 0;
-  background: #0a0e1a;
+  background: var(--text-on-primary);
 }
 
 /* 登录后同步业务数据：只盖内容区（AppLayout 的 main 需 position:relative），侧栏保持可见 */
@@ -274,7 +279,7 @@ watch(
   border: 1px solid rgba(63, 184, 122, 0.35);
   box-shadow:
     0 8px 24px -6px rgba(0, 0, 0, 0.5),
-    inset 0 1px 0 rgba(255, 255, 255, 0.08);
+    inset 0 1px 0 var(--text-body);
   animation: orb-breathe 1.8s ease-in-out infinite;
 }
 
@@ -282,14 +287,14 @@ watch(
   margin: 0;
   font-size: 15px;
   font-weight: 600;
-  color: #fff;
+  color: var(--text-title);
   letter-spacing: 0.02em;
 }
 
 .loading-sub {
   margin: 0;
   font-size: 12px;
-  color: rgba(255, 255, 255, 0.4);
+  color: var(--text-soft);
 }
 
 @keyframes splash-card-in {
@@ -303,14 +308,14 @@ watch(
     box-shadow:
       0 8px 24px -6px rgba(0, 0, 0, 0.5),
       0 0 0 0 rgba(63, 184, 122, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      inset 0 1px 0 var(--text-body);
   }
   50% {
     transform: scale(1.05);
     box-shadow:
       0 8px 24px -6px rgba(0, 0, 0, 0.5),
       0 0 0 14px rgba(63, 184, 122, 0),
-      inset 0 1px 0 rgba(255, 255, 255, 0.08);
+      inset 0 1px 0 var(--text-body);
   }
 }
 </style>

@@ -96,10 +96,10 @@ onMounted(load)
   <div class="h-full overflow-y-auto dark-page p-6">
     <header class="mb-5 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold" style="color: #fff;">🛡 管理员后台</h1>
-        <p class="text-sm" style="color: rgba(255,255,255,0.55);">
+        <h1 class="text-2xl font-bold text-dark-title">🛡 管理员后台</h1>
+        <p class="text-sm text-dark-soft">
           注册用户统计 · 基础面板
-          <span v-if="lastFetched" class="ml-2 text-xs" style="color: rgba(255,255,255,0.3);">
+          <span v-if="lastFetched" class="ml-2 text-xs text-dark-ghost">
             最近更新 {{ lastFetched }}
           </span>
         </p>
@@ -113,48 +113,47 @@ onMounted(load)
     <!-- 4 个核心数字 -->
     <div class="mb-4 grid grid-cols-2 gap-4 md:grid-cols-4">
       <div class="glass-card p-5">
-        <p class="text-xs" style="color: rgba(255,255,255,0.5);">总注册用户</p>
-        <p class="mt-1 text-3xl font-extrabold" style="color: #5FCE89;">
+        <p class="text-xs text-dark-soft">总注册用户</p>
+        <p class="mt-1 text-3xl font-extrabold text-brand">
           {{ stats?.totalUsers ?? '—' }}
         </p>
-        <p class="mt-1 text-xs" style="color: rgba(255,255,255,0.35);">在任一业务表出现过</p>
+        <p class="mt-1 text-xs text-dark-soft">在任一业务表出现过</p>
       </div>
       <div class="glass-card p-5">
-        <p class="text-xs" style="color: rgba(255,255,255,0.5);">已创建宝贝的用户</p>
-        <p class="mt-1 text-3xl font-extrabold" style="color: #5FCE89;">
+        <p class="text-xs text-dark-soft">已创建宝贝的用户</p>
+        <p class="mt-1 text-3xl font-extrabold text-brand">
           {{ stats?.usersWithChildren ?? '—' }}
         </p>
-        <p class="mt-1 text-xs" style="color: rgba(255,255,255,0.35);">覆盖率 {{ coveragePercent }}</p>
+        <p class="mt-1 text-xs text-dark-soft">覆盖率 {{ coveragePercent }}</p>
       </div>
       <div class="glass-card p-5">
-        <p class="text-xs" style="color: rgba(255,255,255,0.5);">总宝贝 / 课程 / 打卡</p>
-        <p class="mt-1 text-2xl font-extrabold" style="color: #fff;">
+        <p class="text-xs text-dark-soft">总宝贝 / 课程 / 打卡</p>
+        <p class="mt-1 text-2xl font-extrabold text-dark-title">
           {{ stats?.totalChildren ?? '—' }} /
           {{ stats?.totalCourses ?? '—' }} /
           {{ stats?.totalCheckins ?? '—' }}
         </p>
-        <p class="mt-1 text-xs" style="color: rgba(255,255,255,0.35);">业务行数（所有用户合计）</p>
+        <p class="mt-1 text-xs text-dark-soft">业务行数（所有用户合计）</p>
       </div>
       <div class="glass-card p-5">
-        <p class="text-xs" style="color: rgba(255,255,255,0.5);">覆盖用户列表</p>
-        <p class="mt-1 text-3xl font-extrabold" style="color: #5FCE89;">
+        <p class="text-xs text-dark-soft">覆盖用户列表</p>
+        <p class="mt-1 text-3xl font-extrabold text-brand">
           {{ usersTotal }}
         </p>
-        <p class="mt-1 text-xs" style="color: rgba(255,255,255,0.35);">按首次创建时间倒序，最多 500</p>
+        <p class="mt-1 text-xs text-dark-soft">按首次创建时间倒序，最多 500</p>
       </div>
     </div>
 
     <!-- 注册用户表 -->
     <div class="glass-card p-5">
-      <h3 class="mb-3 font-bold" style="color: #fff;">📋 注册用户表</h3>
+      <h3 class="mb-3 font-bold text-dark-title">📋 注册用户表</h3>
       <el-table v-loading="loading" :data="users" stripe max-height="540">
         <el-table-column label="邮箱" min-width="200">
           <template #default="{ row }">
-            <span v-if="row.email" class="text-sm" style="color: #fff;">{{ row.email }}</span>
+            <span v-if="row.email" class="text-sm text-dark-title">{{ row.email }}</span>
             <span
               v-else
-              class="text-xs"
-              style="color: rgba(255,255,255,0.4);"
+              class="text-xs text-dark-soft"
               :title="row.uid"
             >无 (uid 截断 {{ row.uid.slice(0, 8) }}…)</span>
           </template>
@@ -163,13 +162,13 @@ onMounted(load)
           <template #default="{ row }">
             <code
               class="select-all break-all text-xs"
-              style="color: rgba(255,255,255,0.7);"
+              style="color: var(--text-body);"
             >{{ row.uid }}</code>
           </template>
         </el-table-column>
         <el-table-column label="首次出现" width="170">
           <template #default="{ row }">
-            <span class="text-xs" style="color: rgba(255,255,255,0.6);">{{ formatTime(row.firstSeenAt) }}</span>
+            <span class="text-xs" style="color: var(--text-body);">{{ formatTime(row.firstSeenAt) }}</span>
           </template>
         </el-table-column>
         <el-table-column label="宝贝" width="80" align="center">
@@ -197,7 +196,7 @@ onMounted(load)
       <p
         v-if="usersTotal > 0"
         class="mt-2 text-center text-xs"
-        style="color: rgba(255,255,255,0.35);"
+        style="color: var(--text-soft);"
       >
         共 {{ usersTotal }} 个用户{{ usersTotal > 500 ? '（仅展示前 500）' : '' }}
       </p>

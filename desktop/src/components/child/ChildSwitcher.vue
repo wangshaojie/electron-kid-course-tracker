@@ -56,7 +56,7 @@ if (typeof window !== 'undefined') {
     <button
       type="button"
       class="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left transition-colors"
-      style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08);"
+      style="background: var(--text-mute); border: 1px solid var(--text-body);"
       @click.stop="toggle"
     >
       <div
@@ -66,14 +66,14 @@ if (typeof window !== 'undefined') {
         {{ current.emoji }}
       </div>
       <div class="min-w-0 flex-1">
-        <p class="truncate font-bold" style="color: #fff;">{{ current.name }}</p>
-        <p class="text-xs" style="color: rgba(255,255,255,0.5);">
+        <p class="truncate font-bold text-dark-title">{{ current.name }}</p>
+        <p class="text-xs" style="color: var(--text-soft);">
           {{ children.count > 1 ? `${children.count} 个宝贝 · 切换` : '点击管理' }}
         </p>
       </div>
       <span
         class="text-xs transition-transform"
-        style="color: rgba(255,255,255,0.5);"
+        style="color: var(--text-soft);"
         :class="{ 'rotate-180': open }"
       >▾</span>
     </button>
@@ -89,13 +89,13 @@ if (typeof window !== 'undefined') {
       <div
         v-if="open"
         class="absolute left-0 right-0 top-full z-30 mt-1 rounded-xl py-1"
-        style="background: #1a1f2e; border: 1px solid rgba(255,255,255,0.1); box-shadow: 0 8px 24px rgba(0,0,0,0.4);"
+        style="background: var(--page-bg-1); border: 1px solid var(--text-mute); box-shadow: 0 8px 24px rgba(0,0,0,0.4);"
         @click.stop
       >
         <p
           v-if="children.count > 1"
           class="px-3 pb-1 pt-1 text-[10px] uppercase tracking-wider"
-          style="color: rgba(255,255,255,0.4);"
+          style="color: var(--text-soft);"
         >
           切换宝贝
         </p>
@@ -107,8 +107,8 @@ if (typeof window !== 'undefined') {
             'mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors',
           ]"
           :style="c.id === children.activeId
-            ? { background: 'rgba(63,184,122,0.15)', color: '#fff' }
-            : { color: 'rgba(255,255,255,0.85)' }"
+            ? { background: 'rgba(63,184,122,0.15)', color: 'var(--text-title)' }
+            : { color: 'var(--text-body)' }"
           @click="pick(c.id)"
         >
           <div
@@ -118,20 +118,20 @@ if (typeof window !== 'undefined') {
             {{ c.emoji }}
           </div>
           <span class="flex-1 truncate">{{ c.name }}</span>
-          <span v-if="c.id === children.activeId" style="color: #5FCE89;">✓</span>
+          <span v-if="c.id === children.activeId" style="color: var(--brand-text);">✓</span>
         </button>
 
-        <div class="my-1 mx-2" style="border-top: 1px solid rgba(255,255,255,0.06);"></div>
+        <div class="my-1 mx-2" style="border-top: 1px solid var(--text-body);"></div>
 
         <button
           type="button"
           class="mx-1 flex w-[calc(100%-0.5rem)] items-center gap-2 rounded-lg px-2 py-2 text-left text-sm transition-colors"
-          style="color: rgba(255,255,255,0.7);"
+          style="color: var(--text-body);"
           @click="gotoSettings"
         >
           <span class="text-base">⚙️</span>
           <span class="flex-1">管理宝贝档案</span>
-          <span class="text-xs" style="color: rgba(255,255,255,0.4);">→</span>
+          <span class="text-xs" style="color: var(--text-soft);">→</span>
         </button>
       </div>
     </transition>

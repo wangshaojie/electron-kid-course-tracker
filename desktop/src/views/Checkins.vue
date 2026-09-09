@@ -92,22 +92,22 @@ async function removeCheckin(id: string) {
       class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center text-center"
     >
       <div class="mb-4 text-6xl">🌱</div>
-      <h2 class="mb-2 text-xl font-bold" style="color: #fff;">还没有宝贝档案</h2>
-      <p class="mb-6 text-sm" style="color: rgba(255,255,255,0.6);">先去「设置」创建一个宝贝，再回来记录上课情况吧。</p>
+      <h2 class="mb-2 text-xl font-bold text-dark-title">还没有宝贝档案</h2>
+      <p class="mb-6 text-sm text-dark-body">先去「设置」创建一个宝贝，再回来记录上课情况吧。</p>
     </div>
 
     <template v-else>
       <header class="flex items-end justify-between">
         <div>
-          <h1 class="flex items-center gap-2 text-2xl font-bold" style="color: #fff;">
+          <h1 class="flex items-center gap-2 text-2xl font-bold text-dark-title">
             <span>{{ children.active?.emoji ?? '🗓' }}</span>
             <span v-if="isCalendar">{{ children.active?.name ?? '' }}的打卡日历</span>
             <span v-else>{{ children.active?.name ?? '' }}的打卡记录</span>
           </h1>
-          <p v-if="isCalendar" class="mt-1 text-sm" style="color: rgba(255,255,255,0.5);">
+          <p v-if="isCalendar" class="mt-1 text-sm text-dark-soft">
             本月打卡 {{ monthCount }} 次 · 共 {{ monthHours }} 节，点击日期查看当天详情
           </p>
-          <p v-else class="mt-1 text-sm" style="color: rgba(255,255,255,0.5);">
+          <p v-else class="mt-1 text-sm text-dark-soft">
             共 {{ checkins.items.length }} 条记录，可按课程和时间筛选后直接导出 Excel
           </p>
         </div>
@@ -124,7 +124,7 @@ async function removeCheckin(id: string) {
               <button class="btn-dark-ghost" style="border-radius: 10px 0 0 10px; padding: 6px 12px;" @click="prevMonth">‹</button>
               <button
                 class="btn-dark-ghost"
-                style="border-radius: 0; padding: 6px 24px; font-weight: 600; color: #fff; border-left: 0;"
+                style="border-radius: 0; padding: 6px 24px; font-weight: 600; color: var(--text-title); border-left: 0;"
               >
                 {{ year }} 年 {{ month }} 月
               </button>
@@ -153,8 +153,8 @@ async function removeCheckin(id: string) {
         <div class="glass-card flex min-h-0 flex-col p-5">
           <div class="mb-3 flex items-center justify-between">
             <div>
-              <h3 class="font-bold" style="color: #fff;">{{ dayLabel }} · {{ weekdayText }}</h3>
-              <p v-if="dayList.length > 0" class="mt-0.5 text-xs" style="color: rgba(255,255,255,0.5);">
+              <h3 class="font-bold text-dark-title">{{ dayLabel }} · {{ weekdayText }}</h3>
+              <p v-if="dayList.length > 0" class="mt-0.5 text-xs text-dark-soft">
                 共 {{ dayList.length }} 次打卡 · {{ dayHours }} 节
               </p>
             </div>
@@ -169,7 +169,7 @@ async function removeCheckin(id: string) {
               class="flex h-full flex-col items-center justify-center py-10 text-center"
             >
               <div class="mb-2 text-3xl">🌱</div>
-              <p class="text-sm" style="color: rgba(255,255,255,0.5);">这一天还没有打卡</p>
+              <p class="text-sm text-dark-soft">这一天还没有打卡</p>
               <button class="btn-dark-ghost mt-3" style="font-size: 12px; padding: 4px 12px;" @click="openCheckin(selectedDate)">
                 记录一次
               </button>
@@ -180,11 +180,11 @@ async function removeCheckin(id: string) {
                 v-for="c in dayList"
                 :key="c.id"
                 class="rounded-lg p-3"
-                style="background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06);"
+                style="background: var(--text-body); border: 1px solid var(--text-body);"
               >
                 <div class="flex items-start justify-between gap-2">
                   <div class="min-w-0">
-                    <p class="flex items-center gap-1.5 text-sm font-medium" style="color: #fff;">
+                    <p class="flex items-center gap-1.5 text-sm font-medium text-dark-title">
                       <span
                         class="h-2 w-2 shrink-0 rounded-full"
                         :style="{ backgroundColor: courseColorOf(c.course_id).text }"
@@ -192,13 +192,13 @@ async function removeCheckin(id: string) {
                       <span class="truncate">{{ courses.byId(c.course_id)?.name ?? '已删除课程' }}</span>
                       <span
                         class="shrink-0 rounded px-1.5 py-px text-[11px] font-semibold"
-                        style="background: rgba(63,184,122,0.15); color: #5FCE89;"
+                        style="background: rgba(63,184,122,0.15); color: var(--brand-text);"
                       >
                         -{{ c.hours }} 节
                       </span>
                     </p>
-                    <p v-if="c.feedback" class="mt-1 text-xs" style="color: rgba(255,255,255,0.55);">{{ c.feedback }}</p>
-                    <p v-else class="mt-1 text-xs" style="color: rgba(255,255,255,0.3);">（无反馈）</p>
+                    <p v-if="c.feedback" class="mt-1 text-xs text-dark-soft">{{ c.feedback }}</p>
+                    <p v-else class="mt-1 text-xs text-dark-ghost">（无反馈）</p>
                   </div>
                   <el-button link type="danger" size="small" class="!-mt-1 shrink-0" @click="removeCheckin(c.id)">
                     删除

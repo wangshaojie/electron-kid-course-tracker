@@ -6,6 +6,8 @@ import { useAuthStore } from './stores/auth'
 // 手动 import 函数式弹窗样式：unplugin 按需不会处理 JS 直接调用的 ElMessageBox / ElMessage
 import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-message.css'
+// 主题变量必须在 index.css 之前,这样组件样式里 var(--xxx) 才有定义
+import './styles/theme.css'
 import './styles/index.css'
 
 const T0 = performance.now()
@@ -14,6 +16,28 @@ const mark = (label: string) => {
   // eslint-disable-next-line no-console
   console.log(`[boot] +${dt}ms ${label}`)
 }
+
+/**
+ * 早期初始化主题(必须在 createApp 之前)
+ *  读 localStorage 'app.theme' → 设 <html data-theme>
+ *  避免首屏闪白/闪黑
+ *
+ * 不依赖 Pinia 实例,直接用裸函数。Pinia 启动后 useThemeStore() 会接管。
+ */
+function applyEarlyTheme() {
+  if (typeof document === 'undefined') return
+  let mode: 'dark' | 'light' | 'system' = 'system'
+  try {
+    const v = localStorage.getItem('app.theme')
+    if (v === 'dark' || v === 'light' || v === 'system') mode = v
+  } catch { /* ignore */ }
+  if (mode === 'system') {
+    document.documentElement.removeAttribute('data-theme')
+  } else {
+    document.documentElement.setAttribute('data-theme', mode)
+  }
+}
+applyEarlyTheme()
 
 async function bootstrap() {
   mark('start')

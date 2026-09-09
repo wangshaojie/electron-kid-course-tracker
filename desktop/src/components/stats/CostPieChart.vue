@@ -2,28 +2,32 @@
 import { computed } from 'vue'
 import { useCoursesStore } from '@/stores/courses'
 import { formatMoney } from '@/utils/money'
+import { useChartTheme } from '@/utils/chartTheme'
 import ChartBase from './ChartBase.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const courses = useCoursesStore()
+const { mode, get } = useChartTheme()  // mode 建立响应依赖
 
 const totalAmount = computed(() =>
   courses.summaries.reduce((s, c) => s + c.total_amount, 0),
 )
 
 const option = computed(() => {
-  const data = courses.summaries.map((c) => ({
-    name: c.name,
-    value: c.total_amount,
+  void mode.value
+  const c = get()
+  const data = courses.summaries.map((s) => ({
+    name: s.name,
+    value: s.total_amount,
   }))
   return {
     backgroundColor: 'transparent',
     tooltip: {
       trigger: 'item',
-      backgroundColor: 'rgba(20, 25, 40, 0.95)',
-      borderColor: 'rgba(255,255,255,0.1)',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: '#fff' },
+      textStyle: { color: c.textTitle },
       formatter: (p: { name: string; value: number; percent: number }) =>
         `${p.name}<br/>${formatMoney(p.value)} (${p.percent}%)`,
     },
@@ -34,7 +38,7 @@ const option = computed(() => {
       itemWidth: 10,
       itemHeight: 10,
       itemGap: 10,
-      textStyle: { color: 'rgba(255,255,255,0.7)', fontSize: 11 },
+      textStyle: { color: c.textBody, fontSize: 11 },
     },
     graphic: [
       {
@@ -43,7 +47,7 @@ const option = computed(() => {
         top: '46%',
         style: {
           text: '总投入',
-          fill: 'rgba(255,255,255,0.45)',
+          fill: c.textSoft,
           fontSize: 12,
         },
       },
@@ -53,7 +57,7 @@ const option = computed(() => {
         top: '52%',
         style: {
           text: formatMoney(totalAmount.value),
-          fill: '#fff',
+          fill: c.textTitle,
           fontSize: 16,
           fontWeight: 600,
         },
@@ -69,7 +73,7 @@ const option = computed(() => {
         minShowLabelAngle: 5,
         itemStyle: {
           borderRadius: 6,
-          borderColor: '#0a0e1a',
+          borderColor: c.tooltipBg,
           borderWidth: 2,
         },
         label: {
@@ -77,7 +81,7 @@ const option = computed(() => {
           position: 'outside',
           formatter: (p: { name: string; percent: number }) =>
             `${p.name}\n${p.percent.toFixed(1)}%`,
-          color: 'rgba(255,255,255,0.85)',
+          color: c.textBody,
           fontSize: 12,
           lineHeight: 16,
           padding: [4, 4, 4, 4],
@@ -87,7 +91,7 @@ const option = computed(() => {
           length: 10,
           length2: 14,
           lineStyle: {
-            color: 'rgba(255,255,255,0.25)',
+            color: c.axisLine,
             width: 1,
           },
         },
@@ -96,7 +100,8 @@ const option = computed(() => {
           moveOverlap: 'shiftY',
         },
         data,
-        color: ['#5FCE89', '#7AC7FF', '#FFB347', '#B58BFF', '#FF9DB5', '#94DFB0', '#E08A1E', '#7B6BAA'],
+        // 调色板:固定几个语义色,跨主题一致(品牌色 + 几个分类色)
+        color: [c.brand1, '#7AC7FF', '#FFB347', '#B58BFF', '#FF9DB5', c.brand2, '#E08A1E', '#7B6BAA'],
       },
     ],
   }

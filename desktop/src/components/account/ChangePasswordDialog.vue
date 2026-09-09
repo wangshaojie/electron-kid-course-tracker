@@ -177,7 +177,7 @@ async function onSubmit() {
     </div>
 
     <div v-show="step === 3" class="change-pw-success">
-      <el-icon :size="48" color="#3FB87A"><CircleCheckFilled /></el-icon>
+      <el-icon :size="48" color="var(--brand-1)"><CircleCheckFilled /></el-icon>
       <p class="success-text">密码修改成功</p>
       <p class="success-hint">本会话已自动用新密码重新登录</p>
     </div>
@@ -189,7 +189,7 @@ async function onSubmit() {
 .change-pw-body { min-height: 280px; }
 .change-pw-body :deep(.el-form-item) { margin-bottom: 14px; }
 .submit { width: 100%; margin-top: 8px; font-size: 16px; font-weight: 500; }
-.pw-error { margin: -6px 0 10px; font-size: 12px; color: #FF7A7A; }
+.pw-error { margin: -6px 0 10px; font-size: 12px; color: var(--danger-text); }
 
 .change-pw-loading {
   display: flex;
@@ -198,8 +198,8 @@ async function onSubmit() {
   gap: 12px;
   padding: 40px 0;
 }
-.loading-text { color: rgba(255,255,255,0.55); font-size: 14px; }
-.change-pw-loading .is-loading { color: #5FCE89 !important; }
+.loading-text { color: var(--text-soft); font-size: 14px; }
+.change-pw-loading .is-loading { color: var(--brand-text) !important; }
 
 .change-pw-success {
   display: flex;
@@ -208,6 +208,6 @@ async function onSubmit() {
   gap: 8px;
   padding: 32px 0;
 }
-.success-text { color: #fff; font-size: 18px; font-weight: 600; margin: 0; }
-.success-hint { color: rgba(255,255,255,0.55); font-size: 13px; margin: 0; }
+.success-text { color: var(--text-title); font-size: 18px; font-weight: 600; margin: 0; }
+.success-hint { color: var(--text-soft); font-size: 13px; margin: 0; }
 </style>

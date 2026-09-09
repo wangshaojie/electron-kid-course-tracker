@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
- * 主布局：侧栏菜单 + 内容区（暗色玻璃风 v2）
+ * 主布局：侧栏菜单 + 内容区(主题感知版)
  *  v2: 加宝贝切换器 + 首次启动强制建第一个宝贝
  *  v3: 加当前用户 + 登出
- *  v4: 全暗色玻璃风，匹配 Login 暗色背景
+ *  v4: 全暗色玻璃风,匹配 Login 暗色背景
+ *  v5: 浅色/深色/跟随系统 三档主题(切主题 UI 移到 Settings.vue 外观卡片)
  */
 import { useRoute, useRouter } from 'vue-router'
 import { computed, ref, onMounted, watch } from 'vue'
@@ -80,18 +81,17 @@ watch(
 </script>
 
 <template>
-  <!-- 首次启动全屏引导（盖住一切） -->
+  <!-- 首次启动全屏引导(盖住一切) -->
   <div
     v-if="isFirstRun"
-    class="fixed inset-0 z-40 flex flex-col items-center justify-center p-6"
-    style="background: #0a0e1a; color: #fff;"
+    class="fixed inset-0 z-40 flex flex-col items-center justify-center p-6 onboard-splash"
   >
     <div class="max-w-md text-center">
       <div class="mb-6 text-7xl">🌱</div>
-      <h1 class="mb-3 text-3xl font-extrabold" style="color: #fff;">
+      <h1 class="mb-3 text-3xl font-extrabold onboard-title">
         欢迎使用《一寸光阴》
       </h1>
-      <p class="mb-8 text-base" style="color: rgba(255,255,255,0.65);">
+      <p class="mb-8 text-base onboard-sub">
         先建一个宝贝档案<br />可以为家里多个宝贝分别记录
       </p>
       <button
@@ -109,14 +109,14 @@ watch(
     v-show="!isFirstRun"
     class="flex h-full w-full dark-page"
   >
-    <!-- 侧栏：暗色玻璃 -->
+    <!-- 侧栏:玻璃 -->
     <aside class="glass-aside flex w-60 flex-col">
       <!-- 品牌区 -->
       <div class="flex items-center gap-3 px-5 py-5">
         <BrandLogo :size="40" />
         <div>
-          <p class="font-bold" style="color: #fff;">一寸光阴</p>
-          <p class="text-xs" style="color: rgba(255,255,255,0.45);">云端同步</p>
+          <p class="font-bold text-dark-title">一寸光阴</p>
+          <p class="text-xs text-dark-soft">云端同步</p>
         </div>
       </div>
 
@@ -131,17 +131,8 @@ watch(
           v-for="m in menus"
           :key="m.path"
           type="button"
-          :class="[
-            'btn-press mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all',
-            activePath === m.path
-              ? 'text-white'
-              : 'text-white/55 hover:text-white/85',
-          ]"
-          :style="activePath === m.path ? {
-            background: 'linear-gradient(135deg, rgba(63,184,122,0.18) 0%, rgba(63,184,122,0.08) 100%)',
-            border: '1px solid rgba(63,184,122,0.25)',
-            boxShadow: 'inset 0 1px 0 rgba(255,255,255,0.05)',
-          } : { border: '1px solid transparent' }"
+          class="btn-press mb-1 flex w-full items-center gap-3 rounded-lg px-3 py-2.5 text-left text-sm font-medium transition-all nav-item"
+          :class="activePath === m.path ? 'nav-item-active' : 'nav-item-idle'"
           @click="go(m.path)"
         >
           <span class="flex h-5 w-5 items-center justify-center" v-html="iconSvg(m.icon)" />
@@ -149,49 +140,38 @@ watch(
         </button>
       </nav>
 
-      <!-- 底部：用户 + 登出 -->
-      <div class="border-t px-4 py-3 text-xs" style="border-color: rgba(255,255,255,0.06); color: rgba(255,255,255,0.55);">
+      <!-- 底部:用户 + 登出 -->
+      <div class="sidebar-bottom border-t px-4 py-3 text-xs">
         <div v-if="auth.user" class="mb-2 flex items-center gap-2">
-          <div
-            class="flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold"
-            style="background: rgba(63,184,122,0.2); color: #5FCE89;"
-          >
+          <div class="sidebar-avatar flex h-7 w-7 flex-shrink-0 items-center justify-center rounded-full text-xs font-bold">
             {{ (auth.user.email ?? auth.user.uid).slice(0, 1).toUpperCase() }}
           </div>
-          <span class="truncate" :title="auth.user.email ?? auth.user.uid">
+          <span class="truncate sidebar-user-email" :title="auth.user.email ?? auth.user.uid">
             {{ auth.user.email ?? auth.user.uid }}
           </span>
         </div>
+
         <button
           v-if="isAdmin"
           type="button"
-          :class="[
-            'btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs',
-            activePath === '/admin'
-              ? 'font-semibold'
-              : 'hover:text-white',
-          ]"
-          :style="activePath === '/admin' ? {
-            background: 'rgba(63,184,122,0.2)',
-            color: '#5FCE89',
-          } : { color: 'rgba(95,206,137,0.7)' }"
+          class="btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs sidebar-admin-btn"
+          :class="activePath === '/admin' ? 'sidebar-admin-btn-active' : ''"
           @click="go('/admin')"
         >
           🛡 管理员后台
         </button>
         <button
           type="button"
-          class="btn-press w-full rounded-md px-2 py-1.5 text-left text-xs hover:text-white"
-          style="color: rgba(255,255,255,0.55);"
+          class="btn-press sidebar-logout w-full rounded-md px-2 py-1.5 text-left text-xs"
           @click="handleLogout"
         >
           🚪 登出
         </button>
-        <p class="mt-1.5 text-[10px]" style="color: rgba(255,255,255,0.25);">v0.4.0 · 暗色玻璃</p>
+        <p class="mt-1.5 text-[10px] text-dark-mute">v0.4.0 · 主题可切换</p>
       </div>
     </aside>
 
-    <!-- 内容区（relative：App.vue 的同步中 loading 用它做定位容器，不盖侧栏） -->
+    <!-- 内容区 -->
     <main class="relative flex flex-1 flex-col overflow-hidden">
       <slot />
     </main>
@@ -207,7 +187,7 @@ watch(
 </template>
 
 <script lang="ts">
-/** 内联 SVG 图标（heroicons-style, 24x24） */
+/** 内联 SVG 图标(heroicons-style, 24x24) */
 const ICONS: Record<string, string> = {
   home: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M3 11l9-8 9 8v9a2 2 0 0 1-2 2h-4v-7H9v7H5a2 2 0 0 1-2-2v-9z"/></svg>',
   book: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M4 5a2 2 0 0 1 2-2h12v18H6a2 2 0 0 0-2 2V5z"/><path d="M4 19a2 2 0 0 1 2-2h12"/></svg>',
@@ -226,5 +206,67 @@ export function iconSvg(name: string): string {
 }
 .btn-press:active {
   transform: scale(0.98);
+}
+
+/* ---- 首次启动引导页 ---- */
+.onboard-splash {
+  background: var(--onboard-bg);
+  color: var(--onboard-title);
+}
+.onboard-title {
+  color: var(--onboard-title);
+}
+.onboard-sub {
+  color: var(--onboard-sub);
+}
+
+/* ---- 侧栏底部 ---- */
+.sidebar-bottom {
+  border-color: var(--divider);
+}
+.sidebar-avatar {
+  background: var(--user-avatar-bg);
+  color: var(--user-avatar-text);
+}
+.sidebar-user-email {
+  color: var(--user-email);
+}
+.sidebar-logout {
+  color: var(--logout-text);
+  transition: color 0.15s ease;
+}
+.sidebar-logout:hover {
+  color: var(--logout-text-hover);
+}
+.sidebar-admin-btn {
+  color: var(--brand-text);
+  opacity: 0.75;
+}
+.sidebar-admin-btn:hover {
+  opacity: 1;
+}
+.sidebar-admin-btn-active {
+  background: var(--brand-soft-bg);
+  color: var(--brand-text);
+  opacity: 1;
+  font-weight: 600;
+}
+
+/* ---- 导航项 ---- */
+.nav-item {
+  border: 1px solid transparent;
+}
+.nav-item-idle {
+  color: var(--nav-text);
+}
+.nav-item-idle:hover {
+  color: var(--nav-text-hover);
+  background: var(--btn-ghost-bg);
+}
+.nav-item-active {
+  color: var(--nav-active-text);
+  background: linear-gradient(135deg, var(--nav-active-bg-from) 0%, var(--nav-active-bg-to) 100%);
+  border-color: var(--nav-active-border);
+  box-shadow: inset 0 1px 0 var(--progress-highlight);
 }
 </style>

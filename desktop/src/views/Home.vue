@@ -71,10 +71,10 @@ async function signOut() {
       class="mx-auto flex min-h-[60vh] max-w-md flex-col items-center justify-center text-center"
     >
       <div class="mb-4 text-6xl">🌱</div>
-      <h2 class="mb-2 text-xl font-bold" style="color: #fff;">
+      <h2 class="mb-2 text-xl font-bold text-dark-title">
         欢迎，{{ noChildHint.email }}
       </h2>
-      <p class="mb-6 text-sm" style="color: rgba(255,255,255,0.6);">
+      <p class="mb-6 text-sm text-dark-body">
         你的账号下还没有宝贝，先创建一个宝贝档案，就可以开始记录课程和打卡啦。
       </p>
       <div class="flex gap-2">
@@ -85,15 +85,15 @@ async function signOut() {
 
     <template v-else>
       <header class="mb-5">
-        <h1 class="flex items-center gap-2 text-2xl font-bold" style="color: #fff;">
+        <h1 class="flex items-center gap-2 text-2xl font-bold text-dark-title">
           <span>{{ children.active?.emoji ?? '🌱' }}</span>
           <span>{{ children.active?.name ?? '小探险家' }}的成长</span>
         </h1>
-        <p class="text-sm" style="color: rgba(255,255,255,0.5);">看一眼关键数字 + 课时消耗</p>
+        <p class="text-sm text-dark-soft">看一眼关键数字 + 课时消耗</p>
       </header>
 
       <!-- 汇总卡片（错位入场：60ms 间隔） -->
-      <div class="mb-6 grid grid-cols-4 gap-4">
+      <div class="mb-6 grid grid-cols-4 items-stretch gap-4">
         <div class="card-stagger" :style="{ animationDelay: '0ms' }">
           <StatCard label="课程总数" :value="courses.count" unit="个" icon="📚" tone="brand" />
         </div>
@@ -118,7 +118,7 @@ async function signOut() {
       <div class="grid grid-cols-3 gap-4">
         <!-- 快捷入口 -->
         <div class="glass-card col-span-1 p-5 card-stagger" :style="{ animationDelay: '240ms' }">
-          <h3 class="mb-3 font-bold" style="color: #fff;">⚡ 快捷操作</h3>
+          <h3 class="mb-3 font-bold text-dark-title">⚡ 快捷操作</h3>
           <div class="space-y-2">
             <button
               class="btn-dark-primary w-full glow-ring"
@@ -147,12 +147,11 @@ async function signOut() {
         <!-- 课时消耗（带流光进度条） -->
         <div class="glass-card col-span-2 p-5 card-stagger" :style="{ animationDelay: '320ms' }">
           <div class="mb-3 flex items-center justify-between">
-            <h3 class="font-bold" style="color: #fff;">⏳ 课时消耗</h3>
+            <h3 class="font-bold text-dark-title">⏳ 课时消耗</h3>
             <button
               v-if="courseRows.length > 0"
               type="button"
-              class="text-xs transition-colors"
-              style="color: #5FCE89;"
+              class="text-xs transition-colors text-brand"
               @click="router.push('/courses')"
             >
               全部 →
@@ -161,16 +160,16 @@ async function signOut() {
           <div
             v-if="courseRows.length === 0"
             class="rounded-lg py-6 text-center text-sm"
-            style="background: rgba(255,255,255,0.04); color: rgba(255,255,255,0.5);"
+            style="background: var(--text-body); color: var(--text-soft);"
           >
             暂无进行中的课程 🌱
           </div>
           <ul v-else class="space-y-4">
             <li v-for="s in courseRows.slice(0, 5)" :key="s.id">
               <div class="flex items-center justify-between gap-2">
-                <span class="min-w-0 truncate text-sm font-medium" style="color: #fff;">{{ s.name }}</span>
+                <span class="min-w-0 truncate text-sm font-medium text-dark-title">{{ s.name }}</span>
                 <div class="flex shrink-0 items-center gap-2">
-                  <span class="text-xs" style="color: rgba(255,255,255,0.5);">
+                  <span class="text-xs text-dark-soft">
                     剩
                     <b
                       class="glass-num"
@@ -201,13 +200,12 @@ async function signOut() {
                 />
                 <!-- 进度文字：右侧悬浮 -->
                 <span
-                  class="absolute right-0 top-0 -translate-y-5 text-[10px] tabular-nums"
-                  style="color: rgba(255,255,255,0.35);"
+                  class="absolute right-0 top-0 -translate-y-5 text-[10px] tabular-nums text-dark-soft"
                 >{{ usedPct(s) }}%</span>
               </div>
-              <div v-if="s.expires_at" class="mt-1 text-xs" style="color: rgba(255,255,255,0.4);">
+              <div v-if="s.expires_at" class="mt-1 text-xs text-dark-soft">
                 到期 {{ s.expires_at }}
-                <span v-if="s.days_to_expire !== null && s.days_to_expire < 0" style="color: #FF7A7A;">
+                <span v-if="s.days_to_expire !== null && s.days_to_expire < 0" class="text-danger">
                   （已过期 {{ -s.days_to_expire }} 天）
                 </span>
                 <span v-else-if="s.days_to_expire !== null">
@@ -222,10 +220,10 @@ async function signOut() {
       <!-- 最近打卡 -->
       <div class="mt-4 glass-card p-5 card-stagger" :style="{ animationDelay: '400ms' }">
         <div class="mb-3 flex items-center justify-between">
-          <h3 class="font-bold" style="color: #fff;">🕒 最近打卡</h3>
-          <button class="text-xs" style="color: #5FCE89;" @click="viewAll">全部 →</button>
+          <h3 class="font-bold text-dark-title">🕒 最近打卡</h3>
+          <button class="text-xs text-brand" @click="viewAll">全部 →</button>
         </div>
-        <div v-if="recentCheckins.length === 0" class="py-6 text-center text-sm" style="color: rgba(255,255,255,0.5);">
+        <div v-if="recentCheckins.length === 0" class="py-6 text-center text-sm text-dark-soft">
           还没有打卡记录
         </div>
         <ul v-else>
@@ -233,17 +231,17 @@ async function signOut() {
             v-for="c in recentCheckins"
             :key="c.id"
             class="flex items-center justify-between py-2.5"
-            style="border-top: 1px solid rgba(255,255,255,0.05);"
+            style="border-top: 1px solid var(--text-mute);"
           >
             <div>
-              <p class="text-sm font-medium" style="color: #fff;">
+              <p class="text-sm font-medium text-dark-title">
                 {{ courses.byId(c.course_id)?.name ?? '(已删除)' }}
               </p>
-              <p class="text-xs" style="color: rgba(255,255,255,0.4);">
+              <p class="text-xs text-dark-soft">
                 {{ c.date }} · {{ c.feedback || '（无反馈）' }}
               </p>
             </div>
-            <span class="text-sm font-semibold num-fade" style="color: #5FCE89;">-{{ c.hours }} 节</span>
+            <span class="text-sm font-semibold num-fade text-brand">-{{ c.hours }} 节</span>
           </li>
         </ul>
       </div>

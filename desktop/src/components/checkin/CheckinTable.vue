@@ -140,7 +140,7 @@ async function onExport() {
 <template>
   <div>
     <div class="mb-4 flex flex-wrap items-center gap-3">
-      <span class="text-sm" style="color: rgba(255,255,255,0.55);">共 {{ rows.length }} 条记录</span>
+      <span class="text-sm" style="color: var(--text-soft);">共 {{ rows.length }} 条记录</span>
       <div class="flex-1" />
       <el-select
         v-model="filterCourse"
@@ -194,7 +194,7 @@ async function onExport() {
       <el-table-column prop="date" label="日期" width="120" sortable />
       <el-table-column label="课程" min-width="160">
         <template #default="{ row }">
-          <span class="font-medium" style="color: #fff;">{{ courseName(row.course_id) }}</span>
+          <span class="font-medium text-dark-title">{{ courseName(row.course_id) }}</span>
         </template>
       </el-table-column>
       <el-table-column prop="hours" label="节数" width="80" align="center">
@@ -204,8 +204,8 @@ async function onExport() {
       </el-table-column>
       <el-table-column prop="feedback" label="课堂反馈" min-width="200">
         <template #default="{ row }">
-          <span v-if="row.feedback" class="text-sm" style="color: rgba(255,255,255,0.7);">{{ row.feedback }}</span>
-          <span v-else class="text-xs" style="color: rgba(255,255,255,0.3);">（无）</span>
+          <span v-if="row.feedback" class="text-sm" style="color: var(--text-body);">{{ row.feedback }}</span>
+          <span v-else class="text-xs" style="color: var(--text-ghost);">（无）</span>
         </template>
       </el-table-column>
       <el-table-column label="操作" width="100" fixed="right">

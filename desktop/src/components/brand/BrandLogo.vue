@@ -28,18 +28,18 @@ defineProps<{
     <defs>
       <!-- 外圆渐变：薄荷绿 -->
       <linearGradient id="brand-ring" x1="8" y1="8" x2="56" y2="56" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#5FCE89" />
+        <stop offset="0" stop-color="var(--brand-text)" />
         <stop offset="1" stop-color="#2A9D63" />
       </linearGradient>
       <!-- 书页渐变：白到薄荷 -->
       <linearGradient id="brand-page" x1="20" y1="22" x2="44" y2="44" gradientUnits="userSpaceOnUse">
-        <stop offset="0" stop-color="#FFFFFF" stop-opacity="0.95" />
+        <stop offset="0" stop-color="var(--text-title)" stop-opacity="0.95" />
         <stop offset="1" stop-color="#EAF8F0" stop-opacity="0.85" />
       </linearGradient>
       <!-- 指针渐变：暖橙 -->
       <linearGradient id="brand-hand" x1="0" y1="0" x2="1" y2="1">
-        <stop offset="0" stop-color="#FFB347" />
-        <stop offset="1" stop-color="#E08A1E" />
+        <stop offset="0" stop-color="var(--sun-2)" />
+        <stop offset="1" stop-color="var(--sun-1)" />
       </linearGradient>
       <!-- 阴影 -->
       <filter id="brand-glow" x="-20%" y="-20%" width="140%" height="140%">
@@ -54,7 +54,7 @@ defineProps<{
     <!-- 外圆环（品牌主色） -->
     <circle cx="32" cy="32" r="28" fill="url(#brand-ring)" />
     <!-- 内圈描边，营造厚度感 -->
-    <circle cx="32" cy="32" r="24" fill="none" stroke="rgba(255,255,255,0.25)" stroke-width="1" />
+    <circle cx="32" cy="32" r="24" fill="none" stroke="var(--text-ghost)" stroke-width="1" />
 
     <!-- 书页（左侧翻起 + 右侧平铺） -->
     <g filter="url(#brand-glow)">
@@ -62,14 +62,14 @@ defineProps<{
       <path
         d="M32 20 L20 22 L20 44 L32 42 Z"
         fill="url(#brand-page)"
-        stroke="rgba(255,255,255,0.6)"
+        stroke="var(--text-body)"
         stroke-width="0.6"
       />
       <!-- 右页 -->
       <path
         d="M32 20 L44 22 L44 44 L32 42 Z"
         fill="url(#brand-page)"
-        stroke="rgba(255,255,255,0.6)"
+        stroke="var(--text-body)"
         stroke-width="0.6"
       />
       <!-- 书脊 -->

@@ -63,37 +63,37 @@ onMounted(() => {
   <div class="h-full overflow-y-auto dark-page p-6">
     <header class="mb-5 flex items-center justify-between">
       <div>
-        <h1 class="text-2xl font-bold" style="color: #fff;">统计分析</h1>
-        <p class="text-sm" style="color: rgba(255,255,255,0.5);">开销分布 + 课时消耗</p>
+        <h1 class="text-2xl font-bold text-dark-title">统计分析</h1>
+        <p class="text-sm text-dark-soft">开销分布 + 课时消耗</p>
       </div>
     </header>
 
     <!-- 期间筛选 -->
     <div class="glass-card mb-4 p-4">
       <div class="flex flex-wrap items-center gap-3">
-        <span class="text-sm font-medium" style="color: rgba(255,255,255,0.7);">时间范围：</span>
+        <span class="text-sm font-medium" style="color: var(--text-body);">时间范围：</span>
         <div style="display: inline-flex;">
           <button
             class="btn-dark-ghost"
-            :style="preset === 'all' ? 'background: rgba(63,184,122,0.15); color: #5FCE89; border-color: rgba(63,184,122,0.4);' : ''"
+            :style="preset === 'all' ? 'background: rgba(63,184,122,0.15); color: var(--brand-text); border-color: rgba(63,184,122,0.4);' : ''"
             style="border-radius: 10px 0 0 10px; font-size: 12px; padding: 6px 12px;"
             @click="applyPreset('all')"
           >全部</button>
           <button
             class="btn-dark-ghost"
-            :style="preset === 'month' ? 'background: rgba(63,184,122,0.15); color: #5FCE89; border-color: rgba(63,184,122,0.4);' : ''"
+            :style="preset === 'month' ? 'background: rgba(63,184,122,0.15); color: var(--brand-text); border-color: rgba(63,184,122,0.4);' : ''"
             style="border-radius: 0; border-left: 0; font-size: 12px; padding: 6px 12px;"
             @click="applyPreset('month')"
           >近 30 天</button>
           <button
             class="btn-dark-ghost"
-            :style="preset === 'quarter' ? 'background: rgba(63,184,122,0.15); color: #5FCE89; border-color: rgba(63,184,122,0.4);' : ''"
+            :style="preset === 'quarter' ? 'background: rgba(63,184,122,0.15); color: var(--brand-text); border-color: rgba(63,184,122,0.4);' : ''"
             style="border-radius: 0; border-left: 0; font-size: 12px; padding: 6px 12px;"
             @click="applyPreset('quarter')"
           >近 90 天</button>
           <button
             class="btn-dark-ghost"
-            :style="preset === 'year' ? 'background: rgba(63,184,122,0.15); color: #5FCE89; border-color: rgba(63,184,122,0.4);' : ''"
+            :style="preset === 'year' ? 'background: rgba(63,184,122,0.15); color: var(--brand-text); border-color: rgba(63,184,122,0.4);' : ''"
             style="border-radius: 0 10px 10px 0; border-left: 0; font-size: 12px; padding: 6px 12px;"
             @click="applyPreset('year')"
           >近 1 年</button>
@@ -109,10 +109,10 @@ onMounted(() => {
           @change="preset = 'custom'"
         />
         <div class="flex-1" />
-        <span class="text-sm" style="color: rgba(255,255,255,0.55);">
-          期间内：<b style="color: #fff;">{{ periodStats.count }}</b> 次打卡 ·
-          <b style="color: #fff;">{{ periodStats.hours }}</b> 节 ·
-          约 <b style="color: #fff;">{{ formatMoney(Math.round(periodStats.amount)) }}</b>
+        <span class="text-sm text-dark-soft">
+          期间内：<b class="text-dark-title">{{ periodStats.count }}</b> 次打卡 ·
+          <b class="text-dark-title">{{ periodStats.hours }}</b> 节 ·
+          约 <b class="text-dark-title">{{ formatMoney(Math.round(periodStats.amount)) }}</b>
         </span>
       </div>
     </div>
@@ -120,20 +120,20 @@ onMounted(() => {
     <!-- 饼图 + 柱图 -->
     <div class="grid grid-cols-2 gap-4">
       <div class="glass-card p-5">
-        <h3 class="mb-3 font-bold" style="color: #fff;">🥧 各课程开销占比</h3>
+        <h3 class="mb-3 font-bold text-dark-title">🥧 各课程开销占比</h3>
         <div class="h-80">
           <CostPieChart />
         </div>
-        <p class="mt-2 text-center text-xs" style="color: rgba(255,255,255,0.4);">
+        <p class="mt-2 text-center text-xs text-dark-soft">
           总投入 {{ formatMoney(courses.totalAmount) }}
         </p>
       </div>
       <div class="glass-card p-5">
-        <h3 class="mb-3 font-bold" style="color: #fff;">📊 各课程课时消耗 vs 剩余</h3>
+        <h3 class="mb-3 font-bold text-dark-title">📊 各课程课时消耗 vs 剩余</h3>
         <div class="h-80">
           <HoursBarChart />
         </div>
-        <p class="mt-2 text-center text-xs" style="color: rgba(255,255,255,0.4);">
+        <p class="mt-2 text-center text-xs text-dark-soft">
           购 {{ courses.totalHours }} 节 · 已用 {{ courses.usedHours }} 节 · 剩 {{ courses.remainHours }} 节
         </p>
       </div>
@@ -141,7 +141,7 @@ onMounted(() => {
 
     <!-- 期间内打卡明细 -->
     <div class="glass-card mt-4 p-5">
-      <h3 class="mb-3 font-bold" style="color: #fff;">📅 期间内打卡明细</h3>
+      <h3 class="mb-3 font-bold text-dark-title">📅 期间内打卡明细</h3>
       <el-table :data="filteredCheckins.slice(0, 50)" stripe max-height="320">
         <el-table-column prop="date" label="日期" width="120" />
         <el-table-column label="课程" min-width="160">
@@ -156,12 +156,12 @@ onMounted(() => {
         </el-table-column>
         <el-table-column prop="feedback" label="课堂反馈" min-width="240">
           <template #default="{ row }">
-            <span v-if="row.feedback" class="text-sm" style="color: rgba(255,255,255,0.7);">{{ row.feedback }}</span>
-            <span v-else class="text-xs" style="color: rgba(255,255,255,0.3);">（无）</span>
+            <span v-if="row.feedback" class="text-sm" style="color: var(--text-body);">{{ row.feedback }}</span>
+            <span v-else class="text-xs" style="color: var(--text-ghost);">（无）</span>
           </template>
         </el-table-column>
       </el-table>
-      <p v-if="filteredCheckins.length > 50" class="mt-2 text-center text-xs" style="color: rgba(255,255,255,0.4);">
+      <p v-if="filteredCheckins.length > 50" class="mt-2 text-center text-xs" style="color: var(--text-soft);">
         仅显示前 50 条，全部请到「打卡」页查看
       </p>
     </div>

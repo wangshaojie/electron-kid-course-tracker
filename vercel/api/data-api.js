@@ -264,16 +264,27 @@ async function handleAdminStats(req, res) {
 }
 
 // 注册用户表
+// ⚠️ Vercel Hobby 计划 Function maxDuration 默认 10s。这里给每张表加 LIMIT，
+// 即使数据量爆炸也保证传输量有上界，不会让冷启动 + 慢 DB 叠加把函数熔断。
+// LIMIT 取 10000（远大于 500 用户展示需求），但足以挡住未来恶意/异常数据增长。
+const ADMIN_USERS_SCAN_LIMIT = 10000
+
 async function handleAdminUsers(req, res) {
   const auth = await requireAdminAsync(req, res)
   if (!auth) return
   try {
     const sql = getSql()
     const [childRows, courseRows, checkinRows, otpRows] = await Promise.all([
-      sql`SELECT owner_id, created_at FROM children`,
-      sql`SELECT owner_id FROM courses`,
-      sql`SELECT owner_id FROM checkins`,
-      sql`SELECT email, consumed_at FROM email_otps WHERE consumed_at IS NOT NULL`,
+      sql.query(
+        `SELECT owner_id, created_at FROM children LIMIT ${ADMIN_USERS_SCAN_LIMIT}`,
+        [],
+      ),
+      sql.query(`SELECT owner_id FROM courses LIMIT ${ADMIN_USERS_SCAN_LIMIT}`, []),
+      sql.query(`SELECT owner_id FROM checkins LIMIT ${ADMIN_USERS_SCAN_LIMIT}`, []),
+      sql.query(
+        `SELECT email, consumed_at FROM email_otps WHERE consumed_at IS NOT NULL LIMIT ${ADMIN_USERS_SCAN_LIMIT}`,
+        [],
+      ),
     ])
 
     const map = new Map()

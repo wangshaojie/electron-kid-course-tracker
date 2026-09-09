@@ -116,11 +116,11 @@ async function onSubmit() {
       <div
         v-if="selectedSummary"
         class="mb-3 -mt-1 rounded-lg px-3 py-2 text-xs"
-        style="background: rgba(63,184,122,0.08); border: 1px solid rgba(63,184,122,0.18); color: rgba(255,255,255,0.7);"
+        style="background: rgba(63,184,122,0.08); border: 1px solid rgba(63,184,122,0.18); color: var(--text-body);"
       >
         <span>已用 {{ selectedSummary.used_hours }} / {{ selectedSummary.total_hours }} 节</span>
-        <span class="mx-2" style="color: rgba(255,255,255,0.3);">·</span>
-        <span :style="selectedSummary.status === 'low' ? 'color: #FFB347; font-weight: 600;' : ''">
+        <span class="mx-2" style="color: var(--text-ghost);">·</span>
+        <span :style="selectedSummary.status === 'low' ? 'color: var(--sun-2); font-weight: 600;' : ''">
           剩 {{ selectedSummary.remain_hours }} 节
         </span>
       </div>

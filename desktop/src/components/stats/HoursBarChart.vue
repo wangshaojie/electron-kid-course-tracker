@@ -1,12 +1,16 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import { useCoursesStore } from '@/stores/courses'
+import { useChartTheme } from '@/utils/chartTheme'
 import ChartBase from './ChartBase.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
 const courses = useCoursesStore()
+const { mode, get } = useChartTheme()  // mode 建立响应依赖
 
 const option = computed(() => {
+  void mode.value  // 主题切换时重算
+  const c = get()
   const summaries = courses.summaries
   const names = summaries.map((s) => s.name)
   const used = summaries.map((s) => s.used_hours)
@@ -17,30 +21,30 @@ const option = computed(() => {
     tooltip: {
       trigger: 'axis',
       axisPointer: { type: 'shadow' },
-      backgroundColor: 'rgba(20, 25, 40, 0.95)',
-      borderColor: 'rgba(255,255,255,0.1)',
+      backgroundColor: c.tooltipBg,
+      borderColor: c.tooltipBorder,
       borderWidth: 1,
-      textStyle: { color: '#fff' },
+      textStyle: { color: c.textTitle },
     },
     legend: {
       data: ['已用', '剩余'],
       top: 10,
-      textStyle: { color: 'rgba(255,255,255,0.75)' },
+      textStyle: { color: c.textBody },
     },
     grid: { left: 50, right: 30, top: 50, bottom: 60 },
     xAxis: {
       type: 'category',
       data: names,
-      axisLine: { lineStyle: { color: 'rgba(255,255,255,0.15)' } },
-      axisLabel: { color: 'rgba(255,255,255,0.65)', interval: 0, rotate: names.length > 4 ? 20 : 0 },
+      axisLine: { lineStyle: { color: c.axisLine } },
+      axisLabel: { color: c.textBody, interval: 0, rotate: names.length > 4 ? 20 : 0 },
     },
     yAxis: {
       type: 'value',
       name: '节',
-      nameTextStyle: { color: 'rgba(255,255,255,0.5)' },
+      nameTextStyle: { color: c.textSoft },
       axisLine: { show: false },
-      axisLabel: { color: 'rgba(255,255,255,0.5)' },
-      splitLine: { lineStyle: { color: 'rgba(255,255,255,0.06)' } },
+      axisLabel: { color: c.textSoft },
+      splitLine: { lineStyle: { color: c.splitLine } },
     },
     series: [
       {
@@ -48,7 +52,7 @@ const option = computed(() => {
         type: 'bar',
         stack: 'total',
         data: used,
-        itemStyle: { color: '#3FB87A', borderRadius: [0, 0, 0, 0] },
+        itemStyle: { color: c.brand1, borderRadius: [0, 0, 0, 0] },
         barWidth: 28,
       },
       {
@@ -56,7 +60,7 @@ const option = computed(() => {
         type: 'bar',
         stack: 'total',
         data: remain,
-        itemStyle: { color: 'rgba(95,206,137,0.35)', borderRadius: [6, 6, 0, 0] },
+        itemStyle: { color: c.brandSoft, borderRadius: [6, 6, 0, 0] },
         barWidth: 28,
       },
     ],
