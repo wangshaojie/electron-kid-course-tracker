@@ -56,6 +56,7 @@ declare global {
       startManualDownload(info: UpdateInfoPayload, mode: 'portable' | 'fallback'): Promise<void>
       openLocalFile(p: string): Promise<void>
       openExternal(url: string): Promise<void>
+      getAppVersion(): Promise<string>
     }
   }
 }

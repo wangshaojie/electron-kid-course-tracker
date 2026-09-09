@@ -42,6 +42,17 @@ const isAdmin = computed(() => auth.user?.role === 'admin')
 const activePath = computed(() => route.path)
 const isFirstRun = computed(() => db.ready && children.loaded && children.count === 0)
 
+// 当前应用版本号（侧栏底部展示）。从主进程读 package.json，dev 也准。
+// 不在第一次 render 时阻塞渲染：onMounted 里异步拉，失败留空字符串。
+const appVersion = ref('')
+onMounted(() => {
+  if (window.updater?.getAppVersion) {
+    void window.updater.getAppVersion()
+      .then((v) => { appVersion.value = v })
+      .catch(() => { /* 留空 */ })
+  }
+})
+
 function go(p: string) {
   if (p === route.path) return
   void router.push(p)
@@ -167,7 +178,7 @@ watch(
         >
           🚪 登出
         </button>
-        <p class="mt-1.5 text-[10px] text-dark-mute">v0.4.0 · 主题可切换</p>
+        <p class="mt-1.5 text-[10px] text-dark-mute">v{{ appVersion || '…' }} · 主题可切换</p>
       </div>
     </aside>
 

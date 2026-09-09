@@ -93,6 +93,9 @@ app.whenReady().then(() => {
       await shell.openPath(p)
     }
   })
+  // 渲染端展示当前版本号（侧栏底部），统一读 package.json 不读 app.getVersion
+  // 因为 dev 模式 app.getVersion() 会返 Electron 版本（参见 readAppVersion 注释）
+  ipcMain.handle('app:getVersion', () => readAppVersion())
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

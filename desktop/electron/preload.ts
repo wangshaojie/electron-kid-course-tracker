@@ -54,4 +54,6 @@ contextBridge.exposeInMainWorld('updater', {
   openLocalFile: (p: string) => ipcRenderer.invoke('update:openLocalFile', p),
   /** 兜底：浏览器打开 GitHub Release 页面 */
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
+  /** 当前应用版本（package.json 读，dev 也准） */
+  getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
 })
