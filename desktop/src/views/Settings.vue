@@ -14,6 +14,7 @@ import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useChildrenStore, type Child } from '@/stores/children'
 import { useThemeStore, type ThemeMode } from '@/stores/theme'
+import { useUpdateStore } from '@/stores/update'
 import { dangerousConfirm } from '@/utils/confirm'
 import { ElMessage } from 'element-plus'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
@@ -23,6 +24,7 @@ const courses = useCoursesStore()
 const checkins = useCheckinsStore()
 const children = useChildrenStore()
 const theme = useThemeStore()
+const updateStore = useUpdateStore()
 
 /** 主题选项 —— 顺序:浅色 / 深色 / 跟随系统(从用户主动选择到被动跟随) */
 const themeOptions: Array<{
@@ -97,6 +99,26 @@ async function onDelete(c: Child) {
 
 function onWipe() {
   ElMessage.warning('请到 CloudBase 控制台清空数据（左侧导航 → 数据库 → 选表 → 删除行）')
+}
+
+/**
+ * 用户点"检测更新"按钮。
+ * 注意：发现新版本时主进程会主动 emit `update:available`，App.vue 已经会弹"立即更新"弹窗，
+ * 这里只做结果反馈（"已是最新" / "网络失败"）；不重复弹发现新版本。
+ */
+async function onCheckUpdate() {
+  if (updateStore.checking) return
+  if (!window.updater?.manualCheck) {
+    ElMessage.warning('当前环境不支持检测更新')
+    return
+  }
+  const r = await updateStore.checkNow()
+  if (r === 'up-to-date') {
+    ElMessage.success(`已是最新版本 v${updateStore.currentVersion}`)
+  } else if (r === 'failed') {
+    ElMessage.error('检测更新失败，请检查网络后重试')
+  }
+  // 'has-update' 由 App.vue 监听 update:available 自动弹"立即更新"弹窗，这里不重复
 }
 </script>
 
@@ -228,15 +250,45 @@ function onWipe() {
 
       <!-- 软件信息 -->
       <div class="glass-card p-5">
-        <h3 class="mb-1 font-bold text-dark-title">ℹ️ 关于</h3>
-        <dl class="grid grid-cols-2 gap-2 text-sm text-dark-body">
+        <div class="mb-3 flex items-center justify-between">
+          <h3 class="font-bold text-dark-title">ℹ️ 关于</h3>
+          <button
+            type="button"
+            class="btn-press settings-check-btn"
+            :disabled="updateStore.checking"
+            @click="onCheckUpdate"
+          >
+            <span v-if="updateStore.checking" class="settings-check-spinner" />
+            <span>{{ updateStore.checking ? '检测中…' : '检测更新' }}</span>
+          </button>
+        </div>
+
+        <!-- 有新版本提示条 -->
+        <div
+          v-if="updateStore.hasUpdate && updateStore.latestVersion"
+          class="settings-update-banner"
+        >
+          🎉 发现新版本 <b>v{{ updateStore.latestVersion }}</b>，点击右上角「检测更新」旁的系统弹窗立即升级
+        </div>
+
+        <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm text-dark-body">
           <dt class="text-dark-soft">软件名称</dt><dd>一寸光阴</dd>
-          <dt class="text-dark-soft">版本</dt><dd>v0.4.0 · 主题可切换</dd>
-          <dt class="text-dark-soft">技术栈</dt><dd>Electron + Vue 3 + CloudBase PG + Element Plus + ECharts</dd>
+          <dt class="text-dark-soft">当前版本</dt>
+          <dd>
+            <span class="settings-mono">v{{ updateStore.currentVersion || '…' }}</span>
+            <span
+              v-if="updateStore.hasUpdate && updateStore.latestVersion"
+              class="settings-new-ver"
+            >→ v{{ updateStore.latestVersion }} 可更新</span>
+          </dd>
+          <dt class="text-dark-soft">技术栈</dt>
+          <dd>Electron 33 + Vue 3.5 + TypeScript + Vite + Pinia + Vue Router + Element Plus + Tailwind CSS + ECharts + ExcelJS + CloudBase SDK</dd>
           <dt class="text-dark-soft">数据位置</dt>
           <dd>云端 CloudBase PostgreSQL（多设备同步）</dd>
-          <dt class="text-dark-soft">说明</dt>
-          <dd>需联网，支持 OTP 邮箱验证码登录、多设备登录看到同一份数据</dd>
+          <dt class="text-dark-soft">鉴权方式</dt>
+          <dd>邮箱 + 密码（首次注册设密；忘记密码可重置）</dd>
+          <dt class="text-dark-soft">同步能力</dt>
+          <dd>多设备登录看到同一份数据；激活孩子/主题偏好跨设备保持一致</dd>
         </dl>
       </div>
     </div>
@@ -359,5 +411,69 @@ function onWipe() {
   font-size: 12px;
   font-weight: 700;
   color: var(--brand-1);
+}
+
+/* ---- 检测更新按钮 ---- */
+.settings-check-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--btn-ghost-bg);
+  border: 1px solid var(--input-border);
+  color: var(--text-body);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.settings-check-btn:hover:not(:disabled) {
+  background: var(--btn-ghost-bg-hover);
+  border-color: var(--input-border-hover);
+  color: var(--text-title);
+}
+.settings-check-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+.settings-check-spinner {
+  display: inline-block;
+  width: 12px;
+  height: 12px;
+  border: 2px solid var(--brand-1);
+  border-top-color: transparent;
+  border-radius: 50%;
+  animation: settings-spin 0.8s linear infinite;
+}
+@keyframes settings-spin {
+  to { transform: rotate(360deg); }
+}
+
+/* ---- 关于卡 · 新版本横幅 ---- */
+.settings-update-banner {
+  margin-bottom: 12px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  font-size: 13px;
+  background: var(--brand-soft-bg);
+  border: 1px solid var(--brand-soft-border);
+  color: var(--brand-text);
+}
+
+/* ---- 关于卡 · 版本号 / 新版本标识 ---- */
+.settings-mono {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-weight: 600;
+  color: var(--text-title);
+}
+.settings-new-ver {
+  margin-left: 8px;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  background: var(--brand-soft-bg);
+  color: var(--brand-text);
 }
 </style>

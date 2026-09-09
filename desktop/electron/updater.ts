@@ -282,23 +282,43 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
 let started = false
 
 /**
+ * 启动时自动 check（被 started 锁保护，只跑一次）
  * @param currentOverride 当前应用版本（dev 时 app.getVersion() 不准）
  */
 export async function checkForUpdates(currentOverride?: string): Promise<void> {
   if (started) return
   started = true
   if (!app.isPackaged && process.env.UPDATE_CHECK !== '1') return
+  await runCheck(currentOverride)
+}
 
+/**
+ * 渲染端"检测更新"按钮主动触发，绕开 started 锁。
+ * 返回：
+ *   - 'has-update'       发现新版本（同时已经 emit update:available 给渲染端）
+ *   - 'up-to-date'       已是最新
+ *   - 'failed'           网络/API 失败
+ */
+export async function checkForUpdatesManual(currentOverride?: string): Promise<'has-update' | 'up-to-date' | 'failed'> {
+  const info = await fetchLatestRelease(currentOverride)
+  if (!info) return 'failed'
+  if (compareVersions(info.version, info.currentVersion) <= 0) {
+    return 'up-to-date'
+  }
   const mode = detectUpdateMode()
+  console.log(`[updater] 手动 check 发现新版本 ${info.version}（${mode} 模式，手动下载）`)
+  emit('update:available', { ...info, mode } as UpdateInfo & { mode: UpdateMode })
+  return 'has-update'
+}
+
+async function runCheck(currentOverride?: string): Promise<void> {
   const info = await fetchLatestRelease(currentOverride)
   if (!info) return
   if (compareVersions(info.version, info.currentVersion) <= 0) {
     console.log(`[updater] 已是最新 ${info.currentVersion}（远端 ${info.version}）`)
     return
   }
-
-  // 不管 NSIS 还是 portable，统一走 manual 下载：
-  // NSIS 模式选 installer .exe，portable 模式选 portable .exe
-  console.log(`[updater] 发现新版本 ${info.version}（${mode} 模式，手动下载）`)
+  const mode = detectUpdateMode()
+  console.log(`[updater] 启动 check 发现新版本 ${info.version}（${mode} 模式，手动下载）`)
   emit('update:available', { ...info, mode } as UpdateInfo & { mode: UpdateMode })
 }

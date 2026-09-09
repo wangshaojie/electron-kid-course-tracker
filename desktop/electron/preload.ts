@@ -56,4 +56,7 @@ contextBridge.exposeInMainWorld('updater', {
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   /** 当前应用版本（package.json 读，dev 也准） */
   getAppVersion: () => ipcRenderer.invoke('app:getVersion'),
+  /** 手动触发检查更新（绕开启动时的 started 锁） */
+  manualCheck: (): Promise<'has-update' | 'up-to-date' | 'failed'> =>
+    ipcRenderer.invoke('update:check'),
 })

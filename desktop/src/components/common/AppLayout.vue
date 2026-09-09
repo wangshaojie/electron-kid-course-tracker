@@ -12,6 +12,7 @@ import { ElMessageBox, ElMessage } from 'element-plus'
 import { useDBStore } from '@/stores/db'
 import { useChildrenStore } from '@/stores/children'
 import { useAuthStore } from '@/stores/auth'
+import { useUpdateStore } from '@/stores/update'
 import ChildSwitcher from '@/components/child/ChildSwitcher.vue'
 import ChildCreateDialog from '@/components/child/ChildCreateDialog.vue'
 import BrandLogo from '@/components/brand/BrandLogo.vue'
@@ -21,6 +22,7 @@ const router = useRouter()
 const db = useDBStore()
 const children = useChildrenStore()
 const auth = useAuthStore()
+const updateStore = useUpdateStore()
 
 const firstRunDialogOpen = ref(false)
 
@@ -42,16 +44,8 @@ const isAdmin = computed(() => auth.user?.role === 'admin')
 const activePath = computed(() => route.path)
 const isFirstRun = computed(() => db.ready && children.loaded && children.count === 0)
 
-// 当前应用版本号（侧栏底部展示）。从主进程读 package.json，dev 也准。
-// 不在第一次 render 时阻塞渲染：onMounted 里异步拉，失败留空字符串。
-const appVersion = ref('')
-onMounted(() => {
-  if (window.updater?.getAppVersion) {
-    void window.updater.getAppVersion()
-      .then((v) => { appVersion.value = v })
-      .catch(() => { /* 留空 */ })
-  }
-})
+// 当前应用版本号（侧栏底部展示）。统一从 update store 读，App.vue 启动时拉过。
+const appVersion = computed(() => updateStore.currentVersion)
 
 function go(p: string) {
   if (p === route.path) return
@@ -178,7 +172,16 @@ watch(
         >
           🚪 登出
         </button>
-        <p class="mt-1.5 text-[10px] text-dark-mute">v{{ appVersion || '…' }} · 主题可切换</p>
+        <p class="mt-1.5 flex items-center gap-1 text-[10px] text-dark-mute">
+          <span>v{{ appVersion || '…' }}</span>
+          <span
+            v-if="updateStore.hasUpdate && updateStore.latestVersion"
+            class="sidebar-update-pill"
+            :title="`有新版本 v${updateStore.latestVersion}，到「设置 → 关于」查看`"
+          >
+            ↑ v{{ updateStore.latestVersion }}
+          </span>
+        </p>
       </div>
     </aside>
 
@@ -261,6 +264,22 @@ export function iconSvg(name: string): string {
   color: var(--brand-text);
   opacity: 1;
   font-weight: 600;
+}
+
+/* ---- 侧栏底部"有新版本"小标签 ---- */
+.sidebar-update-pill {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 6px;
+  border-radius: 999px;
+  font-size: 10px;
+  font-weight: 600;
+  background: var(--brand-soft-bg);
+  color: var(--brand-text);
+  cursor: pointer;
+}
+.sidebar-update-pill:hover {
+  background: var(--brand-soft-bg-2);
 }
 
 /* ---- 导航项 ---- */

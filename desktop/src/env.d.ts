@@ -57,6 +57,7 @@ declare global {
       openLocalFile(p: string): Promise<void>
       openExternal(url: string): Promise<void>
       getAppVersion(): Promise<string>
+      manualCheck(): Promise<'has-update' | 'up-to-date' | 'failed'>
     }
   }
 }

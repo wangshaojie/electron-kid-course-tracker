@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
-import { checkForUpdates, startManualDownload } from './updater'
+import { checkForUpdates, checkForUpdatesManual, startManualDownload } from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -96,6 +96,8 @@ app.whenReady().then(() => {
   // 渲染端展示当前版本号（侧栏底部），统一读 package.json 不读 app.getVersion
   // 因为 dev 模式 app.getVersion() 会返 Electron 版本（参见 readAppVersion 注释）
   ipcMain.handle('app:getVersion', () => readAppVersion())
+  // 渲染端"检测更新"按钮主动触发，绕开启动时的 started 锁
+  ipcMain.handle('update:check', () => checkForUpdatesManual(readAppVersion()))
   createWindow()
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

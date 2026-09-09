@@ -17,6 +17,7 @@ import { useChildrenStore } from '@/stores/children'
 import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useThemeStore } from '@/stores/theme'
+import { useUpdateStore } from '@/stores/update'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -25,6 +26,7 @@ const children = useChildrenStore()
 const courses = useCoursesStore()
 const checkins = useCheckinsStore()
 const theme = useThemeStore()
+const updateStore = useUpdateStore()
 
 const isLoginPage = computed(() => route.name === 'login')
 const initError = ref<string | null>(null)
@@ -100,6 +102,8 @@ function registerUpdater() {
   window.updater.onUpdateAvailable((info) => {
     // eslint-disable-next-line no-console
     console.log('[updater] 收到新版本提醒', info.version, 'mode=', info.mode)
+    // 同步远端版本到 store（Settings.vue / 侧栏底部展示用）
+    updateStore.latestVersion = info.version
     if (isDismissed(info.version)) return
 
     const mode = info.mode ?? 'portable' // 老主进程没带 mode → 当 portable 处理（最安全）
@@ -233,36 +237,34 @@ function renderProgressHtml(percent: number, transferred: string, total: string)
 /**
  * 创建一条长驻的 ElNotification，里面是一个 div 容器，进度回调通过 setHtml 改 innerHTML。
  * 返回 close / setHtml 供后续节流更新。
+ *
+ * 为什么不直接用 VNode + ref：Element Plus 内部对 message vnode 的 ref 钩子调用时序
+ * 不可靠（不同时机下 hostRef 可能为 null），导致 root 永远塞不进去 → 进度条完全看不到。
+ * 改用 setTimeout 0 + document.querySelector 拿 .el-notification__content，时序确定。
  */
 function createProgressNotif(root: HTMLDivElement): { close: () => void; setHtml: (html: string) => void } {
-  // ElNotification.message 接受 VNode/function/string。
-  // 用 h('div') 包裹 root 节点不太自然（root 是真实 DOM，不能直接作为 vnode children），
-  // 最简单的是：把 root 装到一个 vnode 里，然后让 ElNotification 渲染该 vnode。
-  // 但 ElNotification 内部用 createVNode 后 render，VNode children 必须是 VNode/字符串。
-  // 解决：把 root 通过 h('div', { ref: ... }) 包装为 Vue 管理的 vnode，再用 ref 拿到对应 DOM。
-  // 不过这样会丢 root 的 innerHTML 状态。改用更直接的方案：onMessage 传 function 返回 vnode。
-  // 简化：vnode 容器是一个固定 div（Vue 管），通过 ref 在 mounted 钩子把 root 节点挂进去。
-  let hostRef: HTMLDivElement | null = null
-  const vnode = h('div', {
-    ref: (el) => { hostRef = el as HTMLDivElement | null },
-  })
   const handler = ElNotification({
     title: '正在下载新版本',
-    message: vnode,
+    message: h('div'),
     type: 'info',
     duration: 0,         // 不自动关，等下载完成或失败
     showClose: true,
     position: 'bottom-right',
     customClass: 'updater-progress',
   })
-  // 等 Vue 把 vnode 挂到 DOM 后再把 root 容器装进去
-  // 下一次 microtask / macrotask 时 hostRef 已就绪
-  queueMicrotask(() => {
-    if (hostRef && root.parentElement !== hostRef) {
-      hostRef.innerHTML = ''
-      hostRef.appendChild(root)
+  // 等 Notification 挂到 DOM（下一 macrotask 时机最稳）后把 root 塞进 content 容器
+  setTimeout(() => {
+    const content = document.querySelector(
+      '.updater-progress .el-notification__content',
+    ) as HTMLDivElement | null
+    if (content) {
+      content.innerHTML = ''
+      content.appendChild(root)
+    } else {
+      // 兜底：拿不到容器时降级为 body append（至少用户能看见）
+      document.body.appendChild(root)
     }
-  })
+  }, 0)
   return {
     close: () => handler.close(),
     setHtml: (html: string) => {
@@ -273,6 +275,8 @@ function createProgressNotif(root: HTMLDivElement): { close: () => void; setHtml
 
 onMounted(() => {
   registerUpdater()
+  // 拉当前版本到 store（Settings.vue / 关于卡展示用）
+  void updateStore.loadCurrentVersion()
   if (auth.isAuthenticated) {
     void loadBusinessData()
   }
