@@ -1,5 +1,5 @@
 /**
- * stores/courses.ts —— CloudBase PG 适配版
+ * stores/courses.ts —— Supabase PG 适配版（走 data-api HTTP Function）
  *
  * 字段形态：snake_case，与 PG 列名一致（不再 camelCase 互转）
  *  业务计算（已用课时 / 剩余课时 / 单价）通过 RLS 安全读取后客户端聚合

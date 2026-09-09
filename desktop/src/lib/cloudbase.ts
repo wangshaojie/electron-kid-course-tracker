@@ -1,7 +1,7 @@
 /**
  * lib/cloudbase.ts —— 自建 JWT + HTTP Function 入口
  *
- * ⚠️ 文件名沿用历史（cloudbase.ts），实际已与腾讯 CloudBase 完全脱钩：
+ * ⚠️ 文件名沿用历史（cloudbase.ts），与腾讯 CloudBase 无关：
  * 自建 OTP/密码鉴权 + 业务读写都走两个自托管 HTTP Function（部署在 Vercel，
  * 底层 PG 是 Supabase）。这里只保留自建 JWT、OTP / 密码 / 业务 API 等 fetch 封装。
  *
@@ -11,16 +11,13 @@
  *  - 鉴权靠自签 JWT 存到 localStorage / sessionStorage
  */
 
-const envId = import.meta.env.VITE_CLOUDBASE_ENV_ID as string
-const authOtpUrl = (import.meta.env.VITE_AUTH_OTP_URL as string) ||
-  (envId ? `https://${envId}.service.tcloudbase.com/auth-otp` : '')
-const dataApiUrl = (import.meta.env.VITE_DATA_API_URL as string) ||
-  (envId ? `https://${envId}.service.tcloudbase.com/data-api` : '')
+// 端点地址：Vercel 自托管 HTTP Function 根 URL（迁移后唯一主路径）
+const authOtpUrl = import.meta.env.VITE_AUTH_OTP_URL as string
+const dataApiUrl = import.meta.env.VITE_DATA_API_URL as string
 
-// 两个端点都必须可解析：要么显式配 URL（迁移后主路径），要么给旧 envId 兜底
 if (!authOtpUrl || !dataApiUrl) {
   throw new Error(
-    '缺少接口地址：请配置 VITE_AUTH_OTP_URL / VITE_DATA_API_URL（指向部署好的 auth-otp / data-api），或 VITE_CLOUDBASE_ENV_ID（旧 CloudBase 兜底）',
+    '缺少接口地址：请配置 VITE_AUTH_OTP_URL / VITE_DATA_API_URL（指向部署好的 auth-otp / data-api HTTP Function）',
   )
 }
 

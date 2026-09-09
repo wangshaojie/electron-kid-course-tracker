@@ -1,13 +1,13 @@
 /**
- * stores/children.ts —— CloudBase PG 适配版
+ * stores/children.ts —— Supabase PG 适配版（走 data-api HTTP Function）
  *
  * 外部 API 保持不变（state/getters/actions 名字兼容）
- *  内部走 app.rdb().from('children')
+ *  内部走 businessApi()（HTTP Function `data-api`）
  *
  * 字段映射（PG snake_case ↔ UI snake_case 一致，不做转换）：
  *  id / owner_id / name / emoji / color / sort_order / created_at
  *
- * 数据隔离：所有读写都自己加 .eq('owner_id', uid) 过滤
+ * 数据隔离：服务端从 JWT 注入 owner_id，前端不可越权（`data-api` 白名单）
  *  - uid 来自自签 JWT（getActiveUid()）
  *  - RLS 已关闭（见 migration 20260813055506）
  *

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * App.vue —— CloudBase 版本
+ * App.vue —— 顶层组件
  *
  * 启动期由 main.ts 完成 auth.bootstrap()，App.vue 主要负责挂业务数据
  *

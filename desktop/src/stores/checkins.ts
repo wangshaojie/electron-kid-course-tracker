@@ -1,5 +1,5 @@
 /**
- * stores/checkins.ts —— CloudBase PG 适配版
+ * stores/checkins.ts —— Supabase PG 适配版（走 data-api HTTP Function）
  *
  * 课时扣减：本期先在客户端做 SUM 校验，避免超扣。
  * 后期想严谨可以建一个 PG RPC（security definer）做事务。

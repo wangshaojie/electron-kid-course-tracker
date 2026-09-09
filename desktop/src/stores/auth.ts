@@ -1,5 +1,5 @@
 /**
- * stores/auth.ts —— 鉴权 store（自建 JWT + CloudBase HTTP Function `auth-otp`）
+ * stores/auth.ts —— 鉴权 store（自建 JWT + Vercel HTTP Function `auth-otp`）
  *
  * 流程：
  *   1) sendCode(email)  → POST /auth-otp/send → Resend 发邮件
@@ -7,8 +7,9 @@
  *   3) bootstrap()       → 从 localStorage 恢复 session
  *   4) signOut()         → 清 localStorage
  *
- * session 持久化完全前端负责（localStorage），不依赖任何 CloudBase session。
- * 业务 PG 操作走 cloud function（持有腾讯云永久密钥），不需要前端 JWT 参与。
+ * session 持久化完全前端负责（localStorage），不依赖任何第三方 session。
+ * 业务 PG 操作都走 Vercel HTTP Function（持有 Supabase service key），
+ * 客户端只带自签 JWT；后端从 JWT 强制注入 owner_id，前端不可越权。
  */
 
 import { defineStore } from 'pinia'

@@ -98,7 +98,7 @@ async function onDelete(c: Child) {
 }
 
 function onWipe() {
-  ElMessage.warning('请到 CloudBase 控制台清空数据（左侧导航 → 数据库 → 选表 → 删除行）')
+  ElMessage.warning('请到 Supabase 控制台清空数据（Table Editor → 选表 → 删除行）')
 }
 
 /**
@@ -229,11 +229,11 @@ async function onCheckUpdate() {
       <div class="glass-card p-5">
         <h3 class="mb-1 font-bold text-dark-title">☁️ 数据存储</h3>
         <p class="mb-1 text-sm text-dark-body">
-          所有数据实时保存在云端 CloudBase PostgreSQL，多设备登录看到同一份数据，本地不维护副本。
+          所有数据实时保存在云端 Supabase PostgreSQL，多设备登录看到同一份数据，本地不维护副本。
         </p>
         <p class="text-xs text-dark-soft">
           导出 Excel 请到「上课记录 → 列表」工具栏的「📊 导出 Excel」按钮，按当前筛选直接导出。
-          完整数据可到 CloudBase 控制台 → 数据库 手动导出。
+          完整数据可到 Supabase 控制台 → Table Editor 手动导出。
         </p>
       </div>
 
@@ -241,7 +241,7 @@ async function onCheckUpdate() {
       <div class="glass-card settings-warn-card p-5">
         <h3 class="mb-1 font-bold settings-warn-title">🚨 清空所有数据</h3>
         <p class="mb-3 text-sm text-dark-body">
-          数据存储在云端，本应用不提供一键清空（防止误删）。如需删除全部数据，请到 CloudBase 控制台操作。
+          数据存储在云端，本应用不提供一键清空（防止误删）。如需删除全部数据，请到 Supabase 控制台操作。
         </p>
         <el-button type="danger" plain @click="onWipe">
           查看清空指引
@@ -282,9 +282,9 @@ async function onCheckUpdate() {
             >→ v{{ updateStore.latestVersion }} 可更新</span>
           </dd>
           <dt class="text-dark-soft">技术栈</dt>
-          <dd>Electron 33 + Vue 3.5 + TypeScript + Vite + Pinia + Vue Router + Element Plus + Tailwind CSS + ECharts + ExcelJS + CloudBase SDK</dd>
-          <dt class="text-dark-soft">数据位置</dt>
-          <dd>云端 CloudBase PostgreSQL（多设备同步）</dd>
+          <dd>Electron 33 + Vue 3.5 + TypeScript + Vite + Pinia + Vue Router + Element Plus + Tailwind CSS + ECharts + ExcelJS</dd>
+          <dt class="text-dark-soft">后端</dt>
+          <dd>Vercel HTTP Function（auth-otp / data-api）→ Supabase PostgreSQL（多设备同步）</dd>
           <dt class="text-dark-soft">鉴权方式</dt>
           <dd>邮箱 + 密码（首次注册设密；忘记密码可重置）</dd>
           <dt class="text-dark-soft">同步能力</dt>
