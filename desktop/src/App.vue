@@ -7,9 +7,9 @@
  * 关键：watch auth.isAuthenticated，登录态变化时主动 load children
  * （App.vue 在登录时已经挂载，onMounted 不会再跑）
  */
-import { onMounted, computed, ref, watch } from 'vue'
+import { onMounted, computed, ref, watch, h } from 'vue'
 import { useRoute } from 'vue-router'
-import { ElMessage, ElMessageBox } from 'element-plus'
+import { ElMessage, ElMessageBox, ElNotification } from 'element-plus'
 import AppLayout from '@/components/common/AppLayout.vue'
 import { useAuthStore } from '@/stores/auth'
 import { useDBStore } from '@/stores/db'
@@ -125,21 +125,42 @@ function registerUpdater() {
       })
   })
 
-  // ---- 进度 ----
+  // ---- 进度（单例 + 节流，避免堆 N 条 ElMessage） ----
+  // 主进程下载回调频率很高（~每秒十几到几十次），直接 ElMessage 必堆。
+  // 改成：节流到 200ms，第一次建一条带 CSS 进度条的 Notification，
+  // 后续只更新同一条 vnode 的 innerHTML；下载完成/失败时主动关掉。
+  type ProgressRef = { close: () => void; setHtml: (html: string) => void }
+  let progressNotif: ProgressRef | null = null
+  let lastProgressUpdate = 0
   window.updater.onUpdateProgress((p) => {
     if (p.percent >= 100) return
-    // 用 Notification 风格提示
-    ElMessage({
-      message: `正在下载新版本… ${p.percent.toFixed(0)}% (${formatBytes(p.transferred)}/${formatBytes(p.total)})`,
-      type: 'info',
-      duration: 0,
-      showClose: true,
-      grouping: true,
-    })
+    const now = Date.now()
+    // 节流：200ms 内不重复刷新 DOM（人眼分辨 5fps 足够）
+    if (progressNotif && now - lastProgressUpdate < 200) return
+    lastProgressUpdate = now
+
+    const percent = Math.max(0, Math.min(100, p.percent))
+    const transferred = formatBytes(p.transferred)
+    const total = formatBytes(p.total)
+    const html = renderProgressHtml(percent, transferred, total)
+
+    // 首次：建一条长驻 Notification（vnode 内放 div，用 innerHTML 写入进度条）
+    if (!progressNotif) {
+      const root = document.createElement('div')
+      root.className = 'updater-progress-root'
+      root.innerHTML = html
+      progressNotif = createProgressNotif(root)
+      return
+    }
+    // 后续：直接更新同一份 DOM（不重建 Notification）
+    progressNotif.setHtml(html)
   })
 
   // ---- 下载完成 ----
   window.updater.onUpdateDownloaded((d) => {
+    // 关掉进度条 Notification
+    progressNotif?.close()
+    progressNotif = null
     // 统一路径：提示用户打开本地 .exe（NSIS 装包 / portable 替换都是它）
     if (!d.localPath) {
       ElMessage({ message: '下载完成但未拿到本地路径，请重试或去 GitHub 下载。', type: 'error', duration: 0, showClose: true })
@@ -163,6 +184,9 @@ function registerUpdater() {
 
   // ---- 错误（带 fallback 信息） ----
   window.updater.onUpdateError((e) => {
+    // 关掉进度条 Notification
+    progressNotif?.close()
+    progressNotif = null
     if (e.fallback === 'openExternal' && e.url) {
       void ElMessageBox.confirm(
         `自动更新失败：${e.message}\n\n是否打开 GitHub 下载页手动下载？`,
@@ -186,6 +210,65 @@ function formatBytes(n: number): string {
   if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`
   if (n < 1024 * 1024 * 1024) return `${(n / 1024 / 1024).toFixed(1)} MB`
   return `${(n / 1024 / 1024 / 1024).toFixed(2)} GB`
+}
+
+/**
+ * 渲染进度条 HTML（避免依赖 Vue runtime，把进度条直接画成原生 HTML）
+ * - 顶部一行：百分比 + 已传/总大小
+ * - 下方：CSS 渐变进度条，按 percent 走
+ */
+function renderProgressHtml(percent: number, transferred: string, total: string): string {
+  const pct = percent.toFixed(1)
+  return `
+    <div class="updater-progress-row">
+      <span class="updater-progress-pct">${pct}%</span>
+      <span class="updater-progress-size">${transferred} / ${total}</span>
+    </div>
+    <div class="updater-progress-track">
+      <div class="updater-progress-bar" style="width: ${pct}%"></div>
+    </div>
+  `
+}
+
+/**
+ * 创建一条长驻的 ElNotification，里面是一个 div 容器，进度回调通过 setHtml 改 innerHTML。
+ * 返回 close / setHtml 供后续节流更新。
+ */
+function createProgressNotif(root: HTMLDivElement): { close: () => void; setHtml: (html: string) => void } {
+  // ElNotification.message 接受 VNode/function/string。
+  // 用 h('div') 包裹 root 节点不太自然（root 是真实 DOM，不能直接作为 vnode children），
+  // 最简单的是：把 root 装到一个 vnode 里，然后让 ElNotification 渲染该 vnode。
+  // 但 ElNotification 内部用 createVNode 后 render，VNode children 必须是 VNode/字符串。
+  // 解决：把 root 通过 h('div', { ref: ... }) 包装为 Vue 管理的 vnode，再用 ref 拿到对应 DOM。
+  // 不过这样会丢 root 的 innerHTML 状态。改用更直接的方案：onMessage 传 function 返回 vnode。
+  // 简化：vnode 容器是一个固定 div（Vue 管），通过 ref 在 mounted 钩子把 root 节点挂进去。
+  let hostRef: HTMLDivElement | null = null
+  const vnode = h('div', {
+    ref: (el) => { hostRef = el as HTMLDivElement | null },
+  })
+  const handler = ElNotification({
+    title: '正在下载新版本',
+    message: vnode,
+    type: 'info',
+    duration: 0,         // 不自动关，等下载完成或失败
+    showClose: true,
+    position: 'bottom-right',
+    customClass: 'updater-progress',
+  })
+  // 等 Vue 把 vnode 挂到 DOM 后再把 root 容器装进去
+  // 下一次 microtask / macrotask 时 hostRef 已就绪
+  queueMicrotask(() => {
+    if (hostRef && root.parentElement !== hostRef) {
+      hostRef.innerHTML = ''
+      hostRef.appendChild(root)
+    }
+  })
+  return {
+    close: () => handler.close(),
+    setHtml: (html: string) => {
+      if (root) root.innerHTML = html
+    },
+  }
 }
 
 onMounted(() => {
@@ -317,5 +400,57 @@ watch(
       0 0 0 14px rgba(63, 184, 122, 0),
       inset 0 1px 0 var(--text-body);
   }
+}
+
+/* ====== 更新下载进度条 Notification（脱 scope，作用于 body 末端）====== */
+:deep(.updater-progress) {
+  min-width: 320px;
+}
+.updater-progress :deep(.el-notification__content) {
+  margin-left: 0;
+  padding: 0;
+}
+.updater-progress :deep(.el-notification__content),
+.updater-progress .updater-progress-row,
+.updater-progress .updater-progress-track,
+.updater-progress .updater-progress-bar {
+  /* 变量：用户主题色 */
+  --bar-color: var(--brand, #3FB87A);
+}
+.updater-progress .updater-progress-row {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 13px;
+  line-height: 1.4;
+}
+.updater-progress .updater-progress-pct {
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  color: var(--text-title);
+}
+.updater-progress .updater-progress-size {
+  font-size: 12px;
+  color: var(--text-soft);
+  font-variant-numeric: tabular-nums;
+}
+.updater-progress .updater-progress-track {
+  position: relative;
+  width: 100%;
+  height: 6px;
+  background: rgba(63, 184, 122, 0.15);
+  border-radius: 999px;
+  overflow: hidden;
+}
+.updater-progress .updater-progress-bar {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 0;
+  background: linear-gradient(90deg, #3FB87A 0%, #E08A1E 100%);
+  border-radius: 999px;
+  transition: width 0.15s linear;
+  box-shadow: 0 0 8px rgba(63, 184, 122, 0.5);
 }
 </style>
