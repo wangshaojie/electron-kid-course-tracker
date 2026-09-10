@@ -122,6 +122,16 @@ function registerUpdater() {
     )
       .then(async () => {
         rememberDismiss(info.version)
+        // 关键：先给用户一个即时反馈（"正在准备下载"），避免主进程到 GitHub
+        // 拉取 release / 下载 .exe 之前的那几秒被误认为"没反应"。
+        // 第一个 update:progress 事件到达后由 progressNotif 接管，关闭这条 ElMessage。
+        preparingMessage?.close()
+        preparingMessage = ElMessage({
+          message: '正在准备下载，请稍候…',
+          type: 'info',
+          duration: 0,
+          showClose: true,
+        })
         // 统一调主进程下到 %TEMP%；NSIS 选 installer，portable 选 portable
         void window.updater!.startManualDownload(info, mode === 'nsis' ? 'fallback' : 'portable')
       })
@@ -137,8 +147,15 @@ function registerUpdater() {
   type ProgressRef = { close: () => void; setHtml: (html: string) => void }
   let progressNotif: ProgressRef | null = null
   let lastProgressUpdate = 0
+  // 用户点"立即更新"后立即弹的"正在准备下载"短提示；首次 progress 到达时关掉
+  let preparingMessage: { close: () => void } | null = null
   window.updater.onUpdateProgress((p) => {
     if (p.percent >= 100) return
+    // 第一次真正收到进度 → 接管 preparingMessage，进度条接管用户视线
+    if (preparingMessage) {
+      preparingMessage.close()
+      preparingMessage = null
+    }
     const now = Date.now()
     // 节流：200ms 内不重复刷新 DOM（人眼分辨 5fps 足够）
     if (progressNotif && now - lastProgressUpdate < 200) return
@@ -166,6 +183,8 @@ function registerUpdater() {
     // 关掉进度条 Notification
     progressNotif?.close()
     progressNotif = null
+    preparingMessage?.close()
+    preparingMessage = null
     // 统一路径：提示用户打开本地 .exe（NSIS 装包 / portable 替换都是它）
     if (!d.localPath) {
       ElMessage({ message: '下载完成但未拿到本地路径，请重试或去 GitHub 下载。', type: 'error', duration: 0, showClose: true })
@@ -192,6 +211,8 @@ function registerUpdater() {
     // 关掉进度条 Notification
     progressNotif?.close()
     progressNotif = null
+    preparingMessage?.close()
+    preparingMessage = null
     if (e.fallback === 'openExternal' && e.url) {
       void ElMessageBox.confirm(
         `自动更新失败：${e.message}\n\n是否打开 GitHub 下载页手动下载？`,
