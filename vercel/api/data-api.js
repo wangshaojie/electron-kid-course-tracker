@@ -274,7 +274,7 @@ async function handleAdminUsers(req, res) {
   if (!auth) return
   try {
     const sql = getSql()
-    const [childRows, courseRows, checkinRows, otpRows] = await Promise.all([
+    const [childRows, courseRows, checkinRows, otpRows, loginRows] = await Promise.all([
       sql.query(
         `SELECT owner_id, created_at FROM children LIMIT ${ADMIN_USERS_SCAN_LIMIT}`,
         [],
@@ -283,6 +283,14 @@ async function handleAdminUsers(req, res) {
       sql.query(`SELECT owner_id FROM checkins LIMIT ${ADMIN_USERS_SCAN_LIMIT}`, []),
       sql.query(
         `SELECT email, consumed_at FROM email_otps WHERE consumed_at IS NOT NULL LIMIT ${ADMIN_USERS_SCAN_LIMIT}`,
+        [],
+      ),
+      // login_events 走 owner_id 倒序扫前 N 条（按用户聚合后再取最近）
+      sql.query(
+        `SELECT owner_id, email, ip, os, arch, client, app_version, electron_ver, user_agent, auth_method, created_at
+           FROM login_events
+          ORDER BY created_at DESC
+          LIMIT ${ADMIN_USERS_SCAN_LIMIT}`,
         [],
       ),
     ])
@@ -318,8 +326,28 @@ async function handleAdminUsers(req, res) {
       emailToUid.set(uid, String(r.email).toLowerCase())
     }
 
+    // login_events 已经 ORDER BY created_at DESC，第一次出现的 owner_id 即"最近一次登录"
+    const lastSeen = new Map()
+    for (const r of loginRows) {
+      const uid = cleanUid(r.owner_id)
+      if (!uid) continue
+      if (lastSeen.has(uid)) continue // 跳过，后面的更早
+      lastSeen.set(uid, {
+        ip: r.ip || null,
+        os: r.os || null,
+        arch: r.arch || null,
+        client: r.client || null,
+        appVersion: r.app_version || null,
+        electronVersion: r.electron_ver || null,
+        userAgent: r.user_agent || null,
+        authMethod: r.auth_method || null,
+        lastLoginAt: r.created_at || null,
+      })
+    }
+
     const users = []
     for (const [ownerId, agg] of map.entries()) {
+      const last = lastSeen.get(ownerId)
       users.push({
         uid: ownerId,
         email: emailToUid.get(ownerId) || null,
@@ -327,6 +355,16 @@ async function handleAdminUsers(req, res) {
         childCount: agg.childCount,
         courseCount: agg.courseCount,
         checkinCount: agg.checkinCount,
+        // 新增：最近一次登录（可能 null——用户从未走 verify/login/register 的）
+        lastIp: last?.ip || null,
+        lastOs: last?.os || null,
+        lastArch: last?.arch || null,
+        lastClient: last?.client || null,
+        lastAppVersion: last?.appVersion || null,
+        lastElectronVersion: last?.electronVersion || null,
+        lastUserAgent: last?.userAgent || null,
+        lastAuthMethod: last?.authMethod || null,
+        lastLoginAt: last?.lastLoginAt || null,
       })
     }
     users.sort((a, b) => {

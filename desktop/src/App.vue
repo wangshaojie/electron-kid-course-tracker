@@ -18,6 +18,7 @@ import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { useThemeStore } from '@/stores/theme'
 import { useUpdateStore } from '@/stores/update'
+import { refreshClientMeta } from '@/lib/cloudbase'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -277,6 +278,8 @@ onMounted(() => {
   registerUpdater()
   // 拉当前版本到 store（Settings.vue / 关于卡展示用）
   void updateStore.loadCurrentVersion()
+  // 拉当前版本到 cloudbase 出口 header（auth-otp 后端采集 login_events 用）
+  void refreshClientMeta()
   if (auth.isAuthenticated) {
     void loadBusinessData()
   }

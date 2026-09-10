@@ -27,6 +27,28 @@ export const AUTH_OTP_URL = authOtpUrl
 /** data-api HTTP function 根 URL（管理员后台统计） */
 export const DATA_API_URL = dataApiUrl
 
+// ==================== 客户端元信息（管理员后台采集用） ====================
+// App 启动时由 App.vue/auth.bootstrap 调用 refreshClientMeta()，从主进程读当前版本。
+// 之后所有出口（dataApi / auth-otp fetch）自动带 X-Client-Version header，
+// 后端 auth-otp 收到后写 login_events.ip / os / arch / app_version / electron_ver。
+// dev 模式 window.kidfs 不存在（preload 未挂载），自动回退到 ''。
+let _appVersion = ''
+
+/** App 启动时由 App.vue 调一次，从主进程读 package.json version（dev 也准） */
+export async function refreshClientMeta() {
+  try {
+    const v = (await window.updater?.getAppVersion?.()) as string | undefined
+    if (typeof v === 'string' && v) _appVersion = v
+  } catch {
+    /* 留空，header 不带 */
+  }
+}
+
+/** 给 fetch headers 加 X-Client-Version（已加载就带，未加载就空串） */
+function clientHeaders(extra?: Record<string, string>): Record<string, string> {
+  return { 'X-Client-Version': _appVersion, ...(extra || {}) }
+}
+
 // ==================== 自建 JWT ====================
 
 const JWT_KEY = 'auth.jwt'
@@ -236,7 +258,7 @@ export async function otpSend(email: string): Promise<SendResult> {
   try {
     r = await fetch(`${AUTH_OTP_URL}/send`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: clientHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ email }),
     })
   } catch (e) {
@@ -254,7 +276,7 @@ export async function otpVerify(email: string, code: string): Promise<VerifyResu
   try {
     r = await fetch(`${AUTH_OTP_URL}/verify`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: clientHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ email, code }),
     })
   } catch (e) {
@@ -280,7 +302,7 @@ async function postOtp(path: string, body: Record<string, unknown>): Promise<{ s
   try {
     r = await fetch(`${AUTH_OTP_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: clientHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     })
   } catch (e) {
@@ -375,7 +397,7 @@ async function postOtpAuth(path: string, body: Record<string, unknown>): Promise
   try {
     r = await fetch(`${AUTH_OTP_URL}${path}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` },
+      headers: clientHeaders({ 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }),
       body: JSON.stringify(body),
     })
   } catch {
@@ -393,7 +415,7 @@ async function getOtpAuth(path: string): Promise<{ status: number; json: any }> 
   try {
     r = await fetch(`${AUTH_OTP_URL}${path}`, {
       method: 'GET',
-      headers: { Authorization: `Bearer ${tok}` },
+      headers: clientHeaders({ Authorization: `Bearer ${tok}` }),
     })
   } catch {
     return { status: 0, json: { error: 'network_error' } }
@@ -465,10 +487,10 @@ export async function dataApi<T = unknown>(
   try {
     r = await fetch(`${DATA_API_URL}${subPath}`, {
       method,
-      headers: {
+      headers: clientHeaders({
         'Content-Type': 'application/json',
         'Authorization': `Bearer ${tok}`,
-      },
+      }),
       body: method === 'GET' || method === 'DELETE' ? undefined : JSON.stringify(body ?? {}),
     })
   } catch (e) {

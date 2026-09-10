@@ -11,6 +11,14 @@
  *  - usersWithChildren children 表去重 owner_id 数
  *  - childCoverageRate usersWithChildren / totalUsers（保留 4 位小数 → %）
  *  - totalChildren / totalCourses / totalCheckins 业务行数
+ *
+ * 用户表新增列（v0.5+）：
+ *  - lastIp            最近一次登录 IP（x-forwarded-for）
+ *  - lastOs            Windows 10/11 / macOS / Linux
+ *  - lastArch          x64 / arm64 / x86
+ *  - lastAppVersion    来自 X-Client-Version header（package.json version）
+ *  - lastLoginAt       最近一次成功登录时间
+ *  - lastAuthMethod    otp-verify / password-login / register
  */
 import { ref, onMounted, computed } from 'vue'
 import { ElMessage } from 'element-plus'
@@ -34,6 +42,16 @@ interface AdminUser {
   childCount: number
   courseCount: number
   checkinCount: number
+  // 最近一次登录（v0.5+ 由 auth-otp /verify /login /register 写 login_events）
+  lastIp: string | null
+  lastOs: string | null
+  lastArch: string | null
+  lastClient: string | null
+  lastAppVersion: string | null
+  lastElectronVersion: string | null
+  lastUserAgent: string | null
+  lastAuthMethod: 'otp-verify' | 'password-login' | 'register' | null
+  lastLoginAt: string | null
 }
 
 interface AdminUsersResponse {
@@ -61,6 +79,13 @@ function formatTime(s: string | null) {
   } catch {
     return s
   }
+}
+
+function authMethodShort(m: AdminUser['lastAuthMethod']) {
+  if (m === 'otp-verify') return 'OTP'
+  if (m === 'password-login') return '密码'
+  if (m === 'register') return '注册'
+  return ''
 }
 
 async function load() {
@@ -102,6 +127,10 @@ onMounted(load)
           <span v-if="lastFetched" class="ml-2 text-xs text-dark-ghost">
             最近更新 {{ lastFetched }}
           </span>
+        </p>
+        <p class="mt-1 text-xs text-dark-ghost">
+          IP / 设备 / 客户端版本 来自用户最近一次成功登录（OTP / 密码 / 注册）时上报。
+          未登录过的老用户这些列显示「—」。
         </p>
       </div>
       <button class="btn-dark-ghost" :disabled="loading" @click="load">
@@ -190,6 +219,42 @@ onMounted(load)
             <el-tag :type="row.checkinCount > 0 ? 'primary' : 'info'" effect="plain" round>
               {{ row.checkinCount }}
             </el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近 IP" min-width="120">
+          <template #default="{ row }">
+            <code
+              v-if="row.lastIp"
+              class="select-all break-all text-xs"
+              style="color: var(--text-body);"
+            >{{ row.lastIp }}</code>
+            <span v-else class="text-xs text-dark-ghost">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="设备" min-width="150">
+          <template #default="{ row }">
+            <span v-if="row.lastOs || row.lastArch" class="text-xs" style="color: var(--text-body);">
+              {{ row.lastOs || '未知' }}<span v-if="row.lastArch" class="text-dark-ghost"> / {{ row.lastArch }}</span>
+            </span>
+            <span v-else class="text-xs text-dark-ghost">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="客户端版本" min-width="140">
+          <template #default="{ row }">
+            <span v-if="row.lastAppVersion" class="text-xs" style="color: var(--text-body);">
+              v{{ row.lastAppVersion }}
+              <span
+                v-if="row.lastAuthMethod"
+                class="ml-1 text-dark-ghost"
+                :title="row.lastAuthMethod"
+              >· {{ authMethodShort(row.lastAuthMethod) }}</span>
+            </span>
+            <span v-else class="text-xs text-dark-ghost">—</span>
+          </template>
+        </el-table-column>
+        <el-table-column label="最近登录" width="170">
+          <template #default="{ row }">
+            <span class="text-xs" style="color: var(--text-body);">{{ formatTime(row.lastLoginAt) }}</span>
           </template>
         </el-table-column>
       </el-table>

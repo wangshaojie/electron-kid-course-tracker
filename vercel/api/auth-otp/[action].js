@@ -30,6 +30,7 @@ import { Resend } from 'resend'
 import { getSql } from '../../lib/db.js'
 import { signJwt, uidOf, verifyJwt } from '../../lib/jwt.js'
 import { requireAuthAsync, sendJson, readJsonBody, preflight } from '../../lib/auth.js'
+import { parseUserAgent, getClientIp } from '../../lib/ua.js'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const MAIL_FROM = process.env.MAIL_FROM || 'onboarding@resend.dev'
@@ -150,6 +151,30 @@ async function verifyOtpAndConsume(email, code) {
   }
 }
 
+// ============== login_events（管理员后台展示用） ==============
+/**
+ * 记录一条登录事件（best-effort，失败不阻塞主流程）
+ * - owner_id / email / ip / os / arch / client / app_version / electron_ver / user_agent / auth_method
+ * - 失败仅 console.error（采集丢数据 < 用户登录失败）
+ */
+async function recordLoginEvent(req, { email, uid, method }) {
+  try {
+    const ua = parseUserAgent(req)
+    const ip = getClientIp(req)
+    const sql = getSql()
+    await sql`
+      INSERT INTO login_events
+        (owner_id, email, ip, os, arch, client, app_version, electron_ver, user_agent, auth_method, created_at)
+      VALUES
+        (${uid}, ${email}, ${ip || null}, ${ua.os || null}, ${ua.arch || null},
+         ${ua.client || 'unknown'}, ${ua.appVersion || null}, ${ua.electronVersion || null},
+         ${ua.ua || null}, ${method}, now())
+    `
+  } catch (e) {
+    console.error('[login_events] insert error:', e?.message || String(e))
+  }
+}
+
 // ============== handlers ==============
 async function handleSend(req, res, body) {
   const email = String(body.email || '').trim().toLowerCase()
@@ -219,6 +244,8 @@ async function handleVerify(req, res, body) {
   const uid = uidOf(email)
   const role = isAdminEmail(email) ? 'admin' : 'user'
   const token = await signJwt({ email, uid, role })
+  // best-effort 采集登录事件
+  void recordLoginEvent(req, { email, uid, method: 'otp-verify' })
   return sendJson(res, 200, { ok: true, token, uid, email, role })
 }
 
@@ -261,6 +288,7 @@ async function handleLogin(req, res, body) {
   const uid = uidOf(email)
   const role = isAdminEmail(email) ? 'admin' : 'user'
   const token = await signJwt({ email, uid, role })
+  void recordLoginEvent(req, { email, uid, method: 'password-login' })
   return sendJson(res, 200, { ok: true, token, uid, email, role })
 }
 
@@ -304,6 +332,7 @@ async function handleRegister(req, res, body) {
   const uid = uidOf(email)
   const role = isAdminEmail(email) ? 'admin' : 'user'
   const token = await signJwt({ email, uid, role })
+  void recordLoginEvent(req, { email, uid, method: 'register' })
   return sendJson(res, 200, { ok: true, token, uid, email, role })
 }
 
