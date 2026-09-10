@@ -13,7 +13,9 @@ import { verifyJwt } from './jwt.js'
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  'Access-Control-Allow-Headers': 'Content-Type, Authorization',
+  // 桌面端从 package.json 读版本后带 X-Client-Version 头（采集 IP/设备用），
+  // 必须显式列入 Allow-Headers，否则浏览器 preflight 拒，跨域请求挂掉
+  'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Version',
   'Access-Control-Max-Age': '86400',
 }
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS }
