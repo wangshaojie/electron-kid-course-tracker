@@ -41,6 +41,11 @@ vercel/logs.jsonl
 vercel/repro-admin.js
 vercel/repro-admin.cjs
 vercel/repro-admin-fix.cjs
+vercel/.tmp/
+vercel/.tmp
+
+# === vercel CLI local auth (写入仓库根 .vercel/) ===
+.vercel/
 
 # === v0.4.6: theme-migration python caches ===
 desktop/scripts/theme-migration/__pycache__/
