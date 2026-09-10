@@ -24,13 +24,12 @@ if (!authOtpUrl || !dataApiUrl) {
 /** auth-otp HTTP function 根 URL */
 export const AUTH_OTP_URL = authOtpUrl
 
-/** data-api HTTP function 根 URL（管理员后台统计） */
+/** data-api HTTP function 根 URL（业务 CRUD） */
 export const DATA_API_URL = dataApiUrl
 
-// ==================== 客户端元信息（管理员后台采集用） ====================
+// ==================== 客户端元信息 ====================
 // App 启动时由 App.vue/auth.bootstrap 调用 refreshClientMeta()，从主进程读当前版本。
-// 之后所有出口（dataApi / auth-otp fetch）自动带 X-Client-Version header，
-// 后端 auth-otp 收到后写 login_events.ip / os / arch / app_version / electron_ver。
+// 之后所有出口（dataApi / auth-otp fetch）自动带 X-Client-Version header。
 // dev 模式 window.kidfs 不存在（preload 未挂载），自动回退到 ''。
 let _appVersion = ''
 
@@ -58,8 +57,6 @@ const UID_KEY = 'auth.uid'
 export interface SessionUser {
   uid: string
   email: string
-  /** 管理员识别：admin 邮箱登录时由 auth-otp /verify 注入；普通用户缺省为 'user' */
-  role?: 'admin' | 'user'
 }
 
 function readLS<T>(key: string): T | null {
@@ -463,7 +460,7 @@ export async function getPasswordStatus(): Promise<PasswordStatusResult> {
   }
 }
 
-// ==================== data-api HTTP 调用（业务收口 + 管理员后台） ====================
+// ==================== data-api HTTP 调用（业务收口） ====================
 
 export type DataApiResult<T> =
   | { ok: true; data: T }
@@ -472,7 +469,7 @@ export type DataApiResult<T> =
 /**
  * data-api 通用调用（GET/POST/PATCH/DELETE）
  * - 自动带 Authorization: Bearer <当前 JWT>
- * - 401/403/5xx 错误透传原文（管理员调试 / 业务 store 需要原文）
+ * - 401/403/5xx 错误透传原文（业务 store 需要原文）
  */
 export async function dataApi<T = unknown>(
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -507,11 +504,6 @@ export async function dataApi<T = unknown>(
     }
   }
   return { ok: true, data: j as T }
-}
-
-/** GET 便捷封装（管理员后台用） */
-export async function dataApiGet<T = unknown>(subPath: string): Promise<DataApiResult<T>> {
-  return dataApi<T>('GET', subPath)
 }
 
 /**

@@ -38,7 +38,6 @@
 | 📈 **统计分析** | ECharts 饼图 + 柱图 + 时间段筛选（图表自动跟随主题） |
 | ⚙️ **数据管理** | Excel 导出（每门课一个 sheet）/ 认领旧账号数据 |
 | 🎨 **主题切换** | 深色 / 浅色 / 跟随系统；localStorage 兜底，云端同步 best-effort |
-| 🛡 **管理员后台** | 注册用户统计 + 用户列表（`ADMIN_EMAILS` env 白名单鉴权，即时生效） |
 | 🔄 **自动更新** | 启动时检查 GitHub Release，有新版本弹窗提示 |
 | 🎨 **设计风格** | 薄荷绿 + 米色卡片风（浅）/ 暗色玻璃卡（深），ECharts 配色跟随 |
 
@@ -61,8 +60,7 @@
 │  Vercel Functions（Node 20）                            │
 │  ├─ /api/auth-otp   发码/验码/注册/改密/密码登录          │
 │  │                 （scrypt + 自签 JWT）                 │
-│  └─ /api/data-api   业务 CRUD（/b/*）+ 管理员（/admin/*）  │
-│                    ADMIN_EMAILS 白名单鉴权               │
+│  └─ /api/data-api   业务 CRUD（/b/*）                     │
 │  postgres.js 直连（postgres 角色, BYPASSRLS）            │
 └──────────────────────┬─────────────────────────────────┘
                        ▼
@@ -190,10 +188,10 @@ desktop/
 ├── src/
 │   ├── main.ts            # 入口：theme 早期应用 + auth bootstrap → router.isReady → mount
 │   ├── App.vue            # 顶层：登录态切换 + loadBusinessData + theme sync
-│   ├── router/index.ts    # 6 页面 + 守卫（5 业务页 + Login + Admin）
+│   ├── router/index.ts    # 5 页面 + 守卫（4 业务页 + Login）
 │   ├── views/
 │   │   ├── Home.vue  Courses.vue  Checkins.vue
-│   │   ├── Stats.vue  Settings.vue  Login.vue  Admin.vue
+│   │   ├── Stats.vue  Settings.vue  Login.vue
 │   ├── components/
 │   │   ├── common/        # AppLayout / EmptyState / StatCard / AlertBanner
 │   │   ├── child/         # ChildSwitcher / ChildCreateDialog
@@ -365,11 +363,9 @@ pnpm exec electron-builder --win nsis --x64 --config.directories.output="release
 
 Vite 默认 5174，被占会自动跳 5175/5176/... 不影响。
 
-### Q9: admin 页面报 403 / 看不到？
+### Q9: admin 页面 — 已下线（v0.6+）
 
-- 确认 `auth.user?.role === 'admin'`
-- 确认 Vercel env `ADMIN_EMAILS` 含你登录的邮箱（小写）
-- 改 env 后**下次请求**立即生效（不需重启 Vercel）
+v0.3-v0.5.x 上线的管理员后台已在 v0.6 移除。无需再为 admin 配置 env。
 
 ---
 
@@ -396,7 +392,6 @@ Vite 默认 5174，被占会自动跳 5175/5176/... 不影响。
 
 ### v0.4.0~v0.4.4 (2026-08~09)
 
-- ✨ **管理员后台**：注册用户统计 + 列表
 - ✨ **密码登录**：scrypt + 验证码确认邮箱所有权
 - ✨ **NSIS 自动更新**（electron-updater）：latest.yml + blockmap
 - ✨ **v0.4.0 数据修复**：删课 / 删宝贝级联清打卡 + 二次确认

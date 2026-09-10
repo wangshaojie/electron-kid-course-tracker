@@ -11,7 +11,7 @@ Electron 桌面端（Vue，代码零业务改动）
    ▼
 Vercel Functions（vercel/ 目录，Node 20）
    ├─ auth-otp   发码 / 验码 / 密码登录 / 注册 / 改密（scrypt + 自签 JWT）
-   └─ data-api   业务 CRUD（/b/*）+ 管理员统计（/admin/*，ADMIN_EMAILS 白名单）
+   └─ data-api   业务 CRUD（/b/*）
    │  postgres.js 直连（postgres 角色，BYPASSRLS）
    ▼
 Supabase PostgreSQL
@@ -24,7 +24,7 @@ Supabase PostgreSQL
 
 - 自建认证（邮箱验证码 + scrypt 密码 + 自签 JWT）**原样保留**，`user_passwords`
   数据原样搬迁 → **现有用户登录无感**。
-- 桌面端只改两个环境变量 URL，store / 登录页 / 管理员页**零改动**。
+- 桌面端只改两个环境变量 URL，store / 登录页**零改动**。
 - `lib/cloudbase.ts` 文件名沿用历史，实际已与腾讯 CloudBase 脱钩。
 
 ## 2. 迁移前置
@@ -112,7 +112,6 @@ npx vercel deploy --prod
 | `RESEND_API_KEY` | Resend key |
 | `MAIL_FROM` | 发件邮箱（如 noreply@240730.xyz） |
 | `MAIL_SUBJECT` | 【一寸光阴】您的登录验证码 |
-| `ADMIN_EMAILS` | 逗号分隔管理员邮箱（小写） |
 | `OTP_RATE_LIMIT_MS` | 60000（可选） |
 | `OTP_EMAIL_HOUR_LIMIT` | 5（可选） |
 
@@ -149,8 +148,7 @@ VITE_DATA_API_URL=https://<your-project>.vercel.app/data-api
 4. 宝贝：新增/编辑/删除；切换激活宝贝后云端 `user_prefs` 更新
 5. 课程：新增/编辑/删除（课时/金额 > 0 校验）；删除课程连带清打卡
 6. 打卡：新增扣课时、超扣被拒、删除回滚
-7. 管理员后台：`ADMIN_EMAILS` 内邮箱能看到统计与用户表；非白名单邮箱 → 403
-8. anon key 泄露测试：Supabase REST API 直查 `public.children` 应被拒
+7. anon key 泄露测试：Supabase REST API 直查 `public.children` 应被拒
 
 ## 8. 回滚
 

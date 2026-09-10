@@ -7,7 +7,6 @@ import re
 from pathlib import Path
 
 files = [
-    'desktop/src/views/Admin.vue',
     'desktop/src/views/Checkins.vue',
     'desktop/src/views/Home.vue',
     'desktop/src/views/Stats.vue',

@@ -31,15 +31,14 @@ src/
 ├── main.ts                  # 入口：theme 早期应用 + auth bootstrap → router.isReady → mount
 ├── App.vue                  # 顶层：登录态切换 + loadBusinessData + theme sync
 ├── env.d.ts                 # VITE_* 类型
-├── router/index.ts          # 6 页面 + 守卫（Home/Courses/Checkins/Stats/Settings/Login/Admin）
+├── router/index.ts          # 5 页面 + 守卫（Home/Courses/Checkins/Stats/Settings/Login）
 ├── views/
 │   ├── Home.vue             # 总览 + 预警
 │   ├── Courses.vue
 │   ├── Checkins.vue
 │   ├── Stats.vue
 │   ├── Settings.vue         # 主题 / 改密 / 导出 / 认领旧数据
-│   ├── Login.vue            # OTP / 密码 / 注册
-│   └── Admin.vue            # 管理员后台（ADMIN_EMAILS 白名单）
+│   └── Login.vue            # OTP / 密码 / 注册
 ├── components/
 │   ├── common/              # AppLayout / EmptyState / StatCard / AlertBanner
 │   ├── child/               # ChildSwitcher / ChildCreateDialog
@@ -49,7 +48,7 @@ src/
 │   ├── account/             # ChangePasswordDialog / ForgotPasswordDialog / RegisterDialog / PasswordStatusCard
 │   └── brand/               # BrandLogo
 ├── stores/                  # Pinia
-│   ├── auth.ts              # JWT session + userRev（role: 'user' | 'admin'）
+│   ├── auth.ts              # JWT session + userRev
 │   ├── children.ts          # 含 user_prefs 激活孩子同步（children + user_prefs 并行拉取）
 │   ├── courses.ts           # 客户端聚合 used/remain/单节均价
 │   ├── checkins.ts          # 打卡 + 课时预校验
@@ -103,11 +102,8 @@ src/
 - `PATCH  /api/data-api/b/children/:id` → 更新
 - `PATCH  /api/data-api/b/user_prefs` → 按 `owner_id` upsert（无 id 走 upsert）
 - `DELETE /api/data-api/b/children/:id` → 删除
-- `GET    /api/data-api/admin/stats` → 管理员统计（4 数字 + 覆盖率）
-- `GET    /api/data-api/admin/users` → 注册用户表（LIMIT 10000 防 Function 超时）
 
 **鉴权**：`Authorization: Bearer <jwt>`，uid = `sha256(email).slice(0,32)`。
-**管理员**：`requireAdminAsync()` 每次现查 `ADMIN_EMAILS` env（不依赖 JWT 里的 role）。
 
 **`/auth-otp`**：
 
@@ -182,7 +178,7 @@ src/
 
 ### 功能
 
-- [ ] 6 页面都能进（Home / Courses / Checkins / Stats / Settings / **Admin**）
+- [ ] 5 页面都能进（Home / Courses / Checkins / Stats / Settings）
 - [ ] 登录 OTP 流程跑通
 - [ ] 密码登录 / 改密 / 忘记密码 流程跑通
 - [ ] 主题切换 3 档可用：深 / 浅 / 跟随系统
@@ -194,7 +190,7 @@ src/
 - [ ] 首页预警：课时 ≤ 3 亮橙 / 到期 ≤ 14 天亮橙 / 已过期亮红
 - [ ] 统计页：饼图 + 柱图 + 时间段筛选（图表跟随主题变色）
 - [ ] 跨设备登录：当前激活孩子一致（user_prefs）
-- [ ] 管理员后台：白名单邮箱能看到统计 + 用户列表
+- [ ] （v0.6+ 已下线）管理员后台：白名单邮箱能看到统计 + 用户列表
 
 ### 稳定性
 

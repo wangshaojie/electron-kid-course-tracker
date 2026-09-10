@@ -19,7 +19,6 @@
 | ✅ **打卡日历** | 月历视图，格子内直接显示每门课的**课时胶囊**（科目 + 节数），点日期看当天明细 |
 | 📈 **统计分析** | ECharts 饼图 + 柱图 + 时间段筛选（图表自动跟随主题） |
 | 📊 **Excel 导出** | 可选孩子 / 多选科目 / 上课时间范围；**每门课程一个 sheet**（课程信息 + 课时明细 + 汇总），排版工整 |
-| 🛡 **管理员后台** | 注册用户统计 + 用户列表（env 白名单鉴权，即时生效） |
 | 🎨 **主题切换** | 深色 / 浅色 / 跟随系统；localStorage 兜底，云端同步 best-effort |
 | 🔄 **自动更新** | 启动时检查 GitHub Release，有新版本弹窗提示 |
 
@@ -64,8 +63,8 @@ kid-course-tracker/
 ├── vercel/                   # Vercel Functions（自托管 HTTP API）
 │   ├── api/
 │   │   ├── auth-otp.js       #   发码/验码/密码登录/注册/改密（scrypt + 自签 JWT）
-│   │   └── data-api.js       #   业务 CRUD（/b/*）+ 管理员统计（/admin/*，白名单鉴权）
-│   ├── lib/                  #   db.js（postgres 池） + auth.js（JWT / 管理员校验）
+│   │   └── data-api.js       #   业务 CRUD（/b/*）
+│   ├── lib/                  #   db.js（postgres 池） + auth.js（JWT 校验）
 │   └── vercel.json           #   rewrites：/api/data-api/* → /api/data-api?path=*
 ├── supabase/
 │   └── migrations/           #   SQL migration（按文件名升序手动应用）
@@ -87,7 +86,7 @@ Electron 桌面端 (Vue 3.5 + Pinia + Element Plus)
         ▼
 Vercel Functions（Node 20，自托管）
 ├─ /api/auth-otp   发码/验码/注册/改密/密码登录（scrypt + 自签 JWT）
-└─ /api/data-api   业务 CRUD（/b/*）+ 管理员统计（/admin/*，ADMIN_EMAILS 白名单）
+└─ /api/data-api   业务 CRUD（/b/*）
         │  postgres 直连（postgres 角色，BYPASSRLS）
         ▼
 Supabase PostgreSQL
@@ -98,7 +97,6 @@ Supabase PostgreSQL
 
 - **数据隔离**：业务读写全部走 `vercel/api/data-api.js`，`owner_id` 由服务端从 JWT 强制注入（前端传的一律忽略）；表名/写入列/过滤列/排序列全白名单
 - **uid 稳定**：`uid = sha256(email).slice(0,32)`，跨设备一致
-- **管理员**：`ADMIN_EMAILS` env 白名单，每次请求现查，增删立即生效，不信任 JWT 里的 role
 - **时序图 / 数据流 / 迁移约定** 见 [`AGENTS.md`](AGENTS.md)
 
 ## 技术栈

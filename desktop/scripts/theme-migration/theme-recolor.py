@@ -34,7 +34,6 @@ SINGLE_COLOR_STYLE_MAP = [
 # 这里不处理,留给人工
 
 files = [
-    'desktop/src/views/Admin.vue',
     'desktop/src/views/Checkins.vue',
     'desktop/src/views/Home.vue',
     'desktop/src/views/Stats.vue',

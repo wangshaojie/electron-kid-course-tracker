@@ -33,7 +33,6 @@ COMPLEX_COLOR_MAP = [
 # 这些文件全部 template 内的 style 都改
 # <style> 块不处理(Vue scoped style 里的 color 引用本地 var 即可,不需要改)
 files = [
-    'desktop/src/views/Admin.vue',
     'desktop/src/views/Checkins.vue',
     'desktop/src/views/Home.vue',
     'desktop/src/views/Stats.vue',

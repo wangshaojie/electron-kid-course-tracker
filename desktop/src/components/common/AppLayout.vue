@@ -40,7 +40,6 @@ const menus: MenuItem[] = [
   { path: '/settings', label: '设置',     icon: 'cog' },
 ]
 
-const isAdmin = computed(() => auth.user?.role === 'admin')
 const activePath = computed(() => route.path)
 const isFirstRun = computed(() => db.ready && children.loaded && children.count === 0)
 
@@ -157,15 +156,6 @@ watch(
         </div>
 
         <button
-          v-if="isAdmin"
-          type="button"
-          class="btn-press mb-1 w-full rounded-md px-2 py-1.5 text-left text-xs sidebar-admin-btn"
-          :class="activePath === '/admin' ? 'sidebar-admin-btn-active' : ''"
-          @click="go('/admin')"
-        >
-          🛡 管理员后台
-        </button>
-        <button
           type="button"
           class="btn-press sidebar-logout w-full rounded-md px-2 py-1.5 text-left text-xs"
           @click="handleLogout"
@@ -251,19 +241,6 @@ export function iconSvg(name: string): string {
 }
 .sidebar-logout:hover {
   color: var(--logout-text-hover);
-}
-.sidebar-admin-btn {
-  color: var(--brand-text);
-  opacity: 0.75;
-}
-.sidebar-admin-btn:hover {
-  opacity: 1;
-}
-.sidebar-admin-btn-active {
-  background: var(--brand-soft-bg);
-  color: var(--brand-text);
-  opacity: 1;
-  font-weight: 600;
 }
 
 /* ---- 侧栏底部"有新版本"小标签 ---- */

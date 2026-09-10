@@ -41,10 +41,9 @@ export function getSql() {
   }
   const ssl = process.env.PGSSL === 'disable' ? false : 'require'
   _sql = postgres(url, {
-    // admin/* 4 个接口都要 Promise.all 2~5 段 sql.query()，
-    // max:1 会让同实例内并发查询全部串行排队，叠加 4 接口同时打 Supabase pooler 直接 300s 超时。
-    // 调大到 4 后并发查询可以真并行；事务模式 pooler :6543 仍 OK。
-    max: 4,
+    // 业务接口 /health /b/* 都是单条 sql.query，max:1 完全够用。
+    // 之前调 max:4 是为了 admin/* 的 Promise.all，并发查询要真并行；admin 已下线，回退 max:1 节省连接。
+    max: 1,
     prepare: false,
     ssl,
     connection: { application_name: 'kid-course-tracker' },

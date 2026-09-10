@@ -80,7 +80,7 @@ export const useAuthStore = defineStore('auth', () => {
     const r = await otpVerify(email, code)
     if (!r.ok) return { error: r.error }
     token.value = r.token
-    user.value = { uid: r.uid, email: r.email, role: r.role }
+    user.value = { uid: r.uid, email: r.email }
     status.value = 'authenticated'
     userRev.value += 1
     persistSession(r.token, user.value, remember)
@@ -97,7 +97,7 @@ export const useAuthStore = defineStore('auth', () => {
     const r = await passwordLogin(email, password)
     if (!r.ok) return { error: r.error }
     token.value = r.token
-    user.value = { uid: r.uid, email: r.email, role: r.role }
+    user.value = { uid: r.uid, email: r.email }
     status.value = 'authenticated'
     userRev.value += 1
     persistSession(r.token, user.value, remember)
@@ -154,7 +154,7 @@ export const useAuthStore = defineStore('auth', () => {
     const v = await otpVerify(email, codeClean)
     if (!v.ok) return { error: v.error }
     token.value = v.token
-    user.value = { uid: v.uid, email: v.email, role: v.role }
+    user.value = { uid: v.uid, email: v.email }
     status.value = 'authenticated'
     userRev.value += 1
     persistSession(v.token, user.value, remember)
@@ -183,7 +183,7 @@ export const useAuthStore = defineStore('auth', () => {
     if (!r.ok) return { error: r.error }
     // 同步新 token + user（保持当前 session 不被打回 Login 页）
     token.value = r.token
-    user.value = { uid: r.uid, email: r.email, role: r.role }
+    user.value = { uid: r.uid, email: r.email }
     status.value = 'authenticated'
     // 推断 remember 偏好（与登录保持一致）
     const pref = (() => {

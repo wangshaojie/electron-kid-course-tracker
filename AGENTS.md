@@ -32,18 +32,13 @@
 │  │    POST /login   邮箱+密码登录（可选，scrypt 比对） │
 │  │    POST /set-password  验证码确认后 设置/修改密码    │
 │  │    POST /reset-password 忘记密码重置（同 set）       │
-│  │                  JWT payload 含 role（admin/user）  │
 │  │    GET  /health  健康检查                            │
 │  ├─ data-api (HTTP Function, 本地调试 :9000)            │
-│  │    GET  /admin/stats   管理员统计（4 数字）         │
-│  │    GET  /admin/users   注册用户表（最多 500）        │
 │  │    GET  /health       健康检查                        │
 │  │    GET/POST/PATCH/DELETE /b/:table  业务 CRUD        │
 │  │      （children/courses/checkins/user_prefs）        │
 │  │    ★ 业务安全：owner_id 服务端从 JWT 强制注入，      │
 │  │      表名/写入列/过滤列/排序列全白名单               │
-│  │    ★ ADMIN_EMAILS 白名单（不信任 JWT 里的 role，     │
-│  │      每次请求现查 env，admin 增删立即生效）          │
 │  ├─ uid = sha256(email).slice(0, 32)  ← 跨设备稳定     │
 │  └─ pg-backup (Event 定时触发)  每日 PG 备份            │
 └────────────────────────────────────────────────────────┘
@@ -63,7 +58,6 @@
                        │ service role (BYPASSRLS)
                        ▲
        渲染端 fetch data-api /b/* 带 Authorization: Bearer <自签JWT>
-       渲染端 fetch data-api /admin/* 带 Authorization: Bearer <自签JWT>
 ```
 
 **数据隔离**：业务读写**全部走 data-api 云函数**，`owner_id` 由服务端从 JWT 注入（前端传的一律忽略）；数据库层 RLS 已开 + anon policy/权限已删，即使拆包拿到 publishable key 直连 PostgREST 也被拒。
@@ -259,7 +253,7 @@ kid-course-tracker/
 
 **2. 登录（`/login`，默认主路径）**：
 - `Login.vue` 密码 Tab（默认）→ 邮箱 + 密码 → `/login`
-- 成功签与 `/verify` **完全相同的 JWT**，data-api / 管理员白名单 / owner_id 逻辑零改动
+- 成功签与 `/verify` **完全相同的 JWT**，data-api / owner_id 逻辑零改动
 - **安全设计**：
   - 密码 ≥ 8 位含字母数字（前端 + 服务端双重校验）
   - 登录失败统一返回 `invalid_credentials`（防邮箱枚举）
@@ -344,39 +338,15 @@ App.vue 有三件套：
 - 关键操作（删除/清空/认领）必须 `dangerousConfirm`（输入关键字二次确认）
 - Toast 限一个长驻（用 `duration: 0, showClose: true`）
 
-### 4.6 管理员模块（v0.3+）
+### 4.6 管理员模块 — 已下线（v0.6+）
 
-**入口**：侧栏底部"🛡 管理员后台"按钮（仅 `auth.user?.role === 'admin'` 时渲染），路由 `/admin`（`meta.requiresAdmin`）。
+v0.3-v0.5.x 上线的管理员后台（注册用户表 / 活跃度 / 课程热度榜 / 登录设备审计）已在 **v0.6+ 移除**：
 
-**三层鉴权**（缺一不可）：
-
-1. **路由守卫**（`router/index.ts`）—— 已登录但非 admin 访问 `/admin` 直接跳 `/`
-2. **auth-otp 签 JWT** —— `verify` 成功时若 `email ∈ ADMIN_EMAILS` 则 `payload.role = 'admin'`，否则 `'user'`
-3. **data-api 双校验**（cloud function 端）——
-   - 验 `Authorization: Bearer <jwt>` 签名有效性
-   - **不信任 JWT 里的 role**，每次现读 `ADMIN_EMAILS` env 重新比对（白名单增删立即生效，**不需等 30 天 JWT 过期**）
-
-**关键设计取舍**：
-
-- **不新建 admins 表** —— 走 env 白名单，零 schema 改动
-- **不依赖 JWT 里的 role** —— 30 天过期内 admin 被撤，data-api 仍能立即拒绝
-- **不动业务表 RLS / schema** —— 基础 3 项统计用 SQL 聚合 owner_id 跨 4 表 union 去重就够
-- **email 反查** —— `owner_id` = `sha256(email).slice(0,32)`，从 `email_otps` 表里反查真正登录过的邮箱；查不到时显示 uid 截断
-- **历史脏数据兜底** —— 存量 owner_id 曾被 JSON 序列化包裹双引号；已于 2026-08-17 全表清洗（`btrim(owner_id, '"')`），data-api 对 owner_id 仍保留 trim 兼容
-
-**新增/修改文件**：
-
-| 路径 | 改动 |
-|---|---|
-| `cloudbase/functions/auth-otp/index.js` | 读 `ADMIN_EMAILS`，verify 时给 JWT `role` 字段 |
-| `cloudbase/functions/data-api/{index.js,package.json,scf_bootstrap}` | 新建：HTTP Function，3 个路由（health/stats/users） |
-| `cloudbaserc.json` | `auth-otp` env 加 `ADMIN_EMAILS`，`data-api` 函数定义 |
-| `desktop/src/views/Admin.vue` | 新建：4 卡片 + 注册用户表 |
-| `desktop/src/router/index.ts` | 加 `/admin` 路由 + `requiresAdmin` 守卫 |
-| `desktop/src/stores/auth.ts` | verify 时存 `user.role` |
-| `desktop/src/lib/cloudbase.ts` | `SessionUser` 加 `role`，新增 `dataApiGet()` 工具 |
-| `desktop/src/components/common/AppLayout.vue` | 侧栏底部"🛡 管理员后台"按钮（v-if） |
-| `desktop/.env.{development,production,example}` | 加 `VITE_DATA_API_URL` |
+- 入口移除：侧栏无"🛡 管理员后台"按钮，无 `/admin` 路由
+- 数据：Supabase 公共 schema `login_events` 表已 DROP，相关迁移文件 20260910090000 / 20260910100000 / 20260910090001 同步从仓库移除
+- 函数：Vercel `data-api` 的 4 个 `/admin/*` handler 全删，仅保留 `/health` + `/b/*`；`auth-otp` 不再写 `login_events`、不再读 `ADMIN_EMAILS`、不再在 JWT payload 里塞 `role`
+- 桌面端：`Admin.vue` / `components/admin/` / `lib/adminApi.ts` 全部删除；`router/index.ts` 无 `requiresAdmin` 守卫；`AppLayout.vue` 无 `isAdmin` 侧栏按钮
+- Vercel env：可手动清 `ADMIN_EMAILS`（已不被读取，留着无害）
 
 ## 5. 开发命令
 
@@ -472,17 +442,9 @@ tcb routes add -d '{"routes":[{"path":"/data-api","upstreamResourceType":"WEB_SC
 
 migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本会改 schema 风险大）。⚠️ 在 PowerShell 下务必用 `Get-Content -Raw -Encoding UTF8` 传参（见 §6.3），跑完用 `SELECT` 验证表真实存在（`tcb db execute` 返回 0 行不代表建表失败）。
 
-### 7.4 管理员白名单（必做）
+### 7.4 管理员白名单 — 已下线（v0.6+）
 
-第一次部署 data-api 时，**必须**给 `auth-otp` env 注入 `ADMIN_EMAILS`（逗号分隔小写邮箱），否则所有用户都拿不到 admin role：
-```bash
-tcb fn config update fn auth-otp -e <envId> \
-  -e ADMIN_EMAILS=admin@240730.xyz
-```
-
-cloudbaserc.json 也可写 `"ADMIN_EMAILS": "admin@240730.xyz"`，但因 cloudbaserc.json 整体被 `.gitignore` 包含（防密钥泄露），不推荐把白名单写在仓库里，**走 `tcb fn config update` 控制台注入更稳**。
-
-**撤销管理员**只需重新跑一次 `tcb fn config update` 把邮箱从白名单去掉；下次请求起效（JWT role 字段会被忽略，data-api 现查 env 拒绝）。
+v0.6 起 `ADMIN_EMAILS` 不再被读取；保留在 Vercel env 列表里也无副作用（无人读它）。如果想清理，Vercel 控制台 → Settings → Environment Variables → 删除 `ADMIN_EMAILS` 即可。
 
 ### 7.5 桌面端 release（GitHub Actions 自动打包 + 发布）
 
@@ -551,15 +513,12 @@ pnpm release 1.2.3                   # 直跳指定版本
 3. 🟡 **OTP /verify 改用 attempts 全局计数**（当前每条码独立 5 次，可绕过）
 4. 🟡 **NSIS 代码签名**（避免 SmartScreen 警告）
 5. 🟢 **写每日 PG 备份 cron**（用 `tcb fn deploy` + 定时触发）
-6. 🟡 **管理员白名单审计** —— `ADMIN_EMAILS` 走 env 注入（已通过 `tcb fn config update` 而不是 cloudbaserc.json 提交），但每季度人工审计一次；admin 离职/换岗时**立即**从白名单去掉
-7. 🟡 **data-api 限流** —— 当前 `/admin/*` 无 rate limit，单个 admin 误操作可把全表 owner_id 拉一遍（用户量 < 1000 时无害，但用户上量后建议加 per-IP 限流 + 加 `?limit=100&offset=N` 分页）
 
 ## 10. agent 协作约定
 
 - **改 store / 写新表 / 改 migration** → 改完跑 `npx vue-tsc --noEmit`
 - **改 cloud function** → 改完 `tcb fn deploy auth-otp -e <envId>` 部署
 - **新建 cloud function** → 写完三件套（index.js / package.json / scf_bootstrap），**本地 `tcb fn run` 起 :9000 验 4 个鉴权分支**（health / 401 / 403 / 200）再 `tcb fn deploy --force --deployMode zip`
-- **改 ADMIN_EMAILS** → 必须用 `tcb fn config update fn auth-otp -e <envId> -e ADMIN_EMAILS=xxx@yyy.com`，**不要**把白名单写在 cloudbaserc.json 里（被 .gitignore 包含且和密钥混一起）
 - **打 release** → 必须用时间戳 output（见第 8 节坑）
 - **不要** 直接改 `release/<ts>/win-unpacked/` 里的文件（asar 锁，重打会覆盖）
 - **不要** 删 `release.bak.*` 目录（Defender 锁，删不动，留着就行）

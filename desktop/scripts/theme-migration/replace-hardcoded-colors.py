@@ -31,7 +31,6 @@ COLOR_MAP = [
 
 # 简单一次性替换,不在 <style> 块里
 files = [
-    'desktop/src/views/Admin.vue',
     'desktop/src/views/Checkins.vue',
     'desktop/src/views/Home.vue',
     'desktop/src/views/Login.vue',

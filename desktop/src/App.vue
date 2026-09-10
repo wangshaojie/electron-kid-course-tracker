@@ -278,7 +278,7 @@ onMounted(() => {
   registerUpdater()
   // 拉当前版本到 store（Settings.vue / 关于卡展示用）
   void updateStore.loadCurrentVersion()
-  // 拉当前版本到 cloudbase 出口 header（auth-otp 后端采集 login_events 用）
+  // 拉当前版本到 data-api 出口 header（X-Client-Version，调试 / 后续采集可用）
   void refreshClientMeta()
   if (auth.isAuthenticated) {
     void loadBusinessData()

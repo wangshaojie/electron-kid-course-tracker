@@ -4,7 +4,6 @@
  *  - CORS：桌面端（Electron 渲染层 / Vite dev）跨域调用时浏览器会发 preflight，
  *    因此所有响应（含 OPTIONS 204）都必须带 Access-Control-Allow-Origin 等头。
  *  - requireAuth：从 Authorization: Bearer <jwt> 验签，返回 { email, uid }
- *  - requireAdmin：在 requireAuth 基础上 + email ∈ ADMIN_EMAILS（不信任 JWT 里的 role）
  *  - sendJson / readJsonBody：HTTP helper
  */
 
@@ -13,21 +12,10 @@ import { verifyJwt } from './jwt.js'
 const CORS_HEADERS = {
   'Access-Control-Allow-Origin': '*',
   'Access-Control-Allow-Methods': 'GET, POST, PATCH, DELETE, OPTIONS',
-  // 桌面端从 package.json 读版本后带 X-Client-Version 头（采集 IP/设备用），
-  // 必须显式列入 Allow-Headers，否则浏览器 preflight 拒，跨域请求挂掉
   'Access-Control-Allow-Headers': 'Content-Type, Authorization, X-Client-Version',
   'Access-Control-Max-Age': '86400',
 }
 const JSON_HEADERS = { 'Content-Type': 'application/json; charset=utf-8', ...CORS_HEADERS }
-
-function adminEmailSet() {
-  return new Set(
-    String(process.env.ADMIN_EMAILS || '')
-      .split(',')
-      .map((s) => s.trim().toLowerCase())
-      .filter(Boolean),
-  )
-}
 
 export function sendJson(res, status, data) {
   res.status(status).setHeader('Content-Type', 'application/json; charset=utf-8')
@@ -77,17 +65,6 @@ export async function requireAuthAsync(req, res) {
     return null
   }
   return { email, uid, role: v.payload.role || 'user' }
-}
-
-/** admin 路由：登录 + 现查 ADMIN_EMAILS 白名单 */
-export async function requireAdminAsync(req, res) {
-  const auth = await requireAuthAsync(req, res)
-  if (!auth) return null
-  if (!auth.email || !adminEmailSet().has(auth.email)) {
-    sendJson(res, 403, { error: 'forbidden', message: 'not in ADMIN_EMAILS' })
-    return null
-  }
-  return auth
 }
 
 export { JSON_HEADERS, CORS_HEADERS }

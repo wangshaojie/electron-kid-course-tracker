@@ -20,7 +20,6 @@
  *   - RESEND_API_KEY        Resend
  *   - MAIL_FROM             发件人（默认 onboarding@resend.dev）
  *   - MAIL_SUBJECT          邮件主题
- *   - ADMIN_EMAILS          逗号分隔管理员邮箱（小写）
  *   - OTP_RATE_LIMIT_MS     send 同 IP/邮箱最小间隔（默认 60000）
  *   - OTP_EMAIL_HOUR_LIMIT  send 单邮箱每小时上限（默认 5）
  */
@@ -30,18 +29,10 @@ import { Resend } from 'resend'
 import { getSql } from '../../lib/db.js'
 import { signJwt, uidOf, verifyJwt } from '../../lib/jwt.js'
 import { requireAuthAsync, sendJson, readJsonBody, preflight } from '../../lib/auth.js'
-import { parseUserAgent, getClientIp } from '../../lib/ua.js'
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY
 const MAIL_FROM = process.env.MAIL_FROM || 'onboarding@resend.dev'
 const MAIL_SUBJECT = process.env.MAIL_SUBJECT || '【一寸光阴】您的登录验证码'
-
-const ADMIN_EMAILS = String(process.env.ADMIN_EMAILS || '')
-  .split(',')
-  .map((s) => s.trim().toLowerCase())
-  .filter(Boolean)
-const adminEmailSet = new Set(ADMIN_EMAILS)
-const isAdminEmail = (email) => typeof email === 'string' && adminEmailSet.has(email.trim().toLowerCase())
 
 const resend = RESEND_API_KEY ? new Resend(RESEND_API_KEY) : null
 
@@ -151,30 +142,6 @@ async function verifyOtpAndConsume(email, code) {
   }
 }
 
-// ============== login_events（管理员后台展示用） ==============
-/**
- * 记录一条登录事件（best-effort，失败不阻塞主流程）
- * - owner_id / email / ip / os / arch / client / app_version / electron_ver / user_agent / auth_method
- * - 失败仅 console.error（采集丢数据 < 用户登录失败）
- */
-async function recordLoginEvent(req, { email, uid, method }) {
-  try {
-    const ua = parseUserAgent(req)
-    const ip = getClientIp(req)
-    const sql = getSql()
-    await sql`
-      INSERT INTO login_events
-        (owner_id, email, ip, os, arch, client, app_version, electron_ver, user_agent, auth_method, created_at)
-      VALUES
-        (${uid}, ${email}, ${ip || null}, ${ua.os || null}, ${ua.arch || null},
-         ${ua.client || 'unknown'}, ${ua.appVersion || null}, ${ua.electronVersion || null},
-         ${ua.ua || null}, ${method}, now())
-    `
-  } catch (e) {
-    console.error('[login_events] insert error:', e?.message || String(e))
-  }
-}
-
 // ============== handlers ==============
 async function handleSend(req, res, body) {
   const email = String(body.email || '').trim().toLowerCase()
@@ -242,11 +209,8 @@ async function handleVerify(req, res, body) {
   if (!r.ok) return sendJson(res, r.status, { error: r.error, detail: r.detail })
 
   const uid = uidOf(email)
-  const role = isAdminEmail(email) ? 'admin' : 'user'
-  const token = await signJwt({ email, uid, role })
-  // best-effort 采集登录事件
-  void recordLoginEvent(req, { email, uid, method: 'otp-verify' })
-  return sendJson(res, 200, { ok: true, token, uid, email, role })
+  const token = await signJwt({ email, uid })
+  return sendJson(res, 200, { ok: true, token, uid, email })
 }
 
 async function handleLogin(req, res, body) {
@@ -286,10 +250,8 @@ async function handleLogin(req, res, body) {
   loginFails.delete(email)
 
   const uid = uidOf(email)
-  const role = isAdminEmail(email) ? 'admin' : 'user'
-  const token = await signJwt({ email, uid, role })
-  void recordLoginEvent(req, { email, uid, method: 'password-login' })
-  return sendJson(res, 200, { ok: true, token, uid, email, role })
+  const token = await signJwt({ email, uid })
+  return sendJson(res, 200, { ok: true, token, uid, email })
 }
 
 async function handleRegister(req, res, body) {
@@ -330,10 +292,8 @@ async function handleRegister(req, res, body) {
 
   // 4) 签 JWT（与 /verify / /login 完全一致）
   const uid = uidOf(email)
-  const role = isAdminEmail(email) ? 'admin' : 'user'
-  const token = await signJwt({ email, uid, role })
-  void recordLoginEvent(req, { email, uid, method: 'register' })
-  return sendJson(res, 200, { ok: true, token, uid, email, role })
+  const token = await signJwt({ email, uid })
+  return sendJson(res, 200, { ok: true, token, uid, email })
 }
 
 // 设置 / 修改 / 重置密码：两条入口
@@ -457,9 +417,8 @@ async function handleChangePassword(req, res, body) {
     return sendJson(res, 500, { error: 'db_error', detail: e?.message || String(e) })
   }
 
-  const role = isAdminEmail(email) ? 'admin' : 'user'
-  const token = await signJwt({ email, uid: auth.uid, role })
-  return sendJson(res, 200, { ok: true, token, uid: auth.uid, email, role })
+  const token = await signJwt({ email, uid: auth.uid })
+  return sendJson(res, 200, { ok: true, token, uid: auth.uid, email })
 }
 
 async function handlePasswordStatus(req, res) {
@@ -483,7 +442,6 @@ async function handlePasswordStatus(req, res) {
 function handleHealth(req, res) {
   return sendJson(res, 200, {
     ok: true,
-    adminCount: ADMIN_EMAILS.length,
     ts: new Date().toISOString(),
   })
 }
