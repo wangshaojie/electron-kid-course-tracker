@@ -25,40 +25,54 @@
                        │ VITE_AUTH_OTP_URL
                        ▼
 ┌────────────────────────────────────────────────────────┐
-│  CloudBase 云函数                                       │
-│  ├─ auth-otp (HTTP Function, 本地调试 :9000)           │
-│  │    POST /send    发 6 位验证码邮件（Resend）         │
-│  │    POST /verify  校验码 + 签自签 JWT（30 天有效）    │
-│  │    POST /login   邮箱+密码登录（可选，scrypt 比对） │
-│  │    POST /set-password  验证码确认后 设置/修改密码    │
-│  │    POST /reset-password 忘记密码重置（同 set）       │
-│  │    GET  /health  健康检查                            │
-│  ├─ data-api (HTTP Function, 本地调试 :9000)            │
-│  │    GET  /health       健康检查                        │
-│  │    GET/POST/PATCH/DELETE /b/:table  业务 CRUD        │
-│  │      （children/courses/checkins/user_prefs）        │
-│  │    ★ 业务安全：owner_id 服务端从 JWT 强制注入，      │
-│  │      表名/写入列/过滤列/排序列全白名单               │
-│  ├─ uid = sha256(email).slice(0, 32)  ← 跨设备稳定     │
-│  └─ pg-backup (Event 定时触发)  每日 PG 备份            │
+│  Vercel Functions (Node 20, 自托管)                      │
+│  ├─ api/auth-otp/[action].js (HTTP Function)            │
+│  │    POST /send             发 6 位验证码邮件（Resend） │
+│  │    POST /verify           校验码 + 签自签 JWT（30d）   │
+│  │    POST /login            邮箱+密码登录（scrypt 比对） │
+│  │    POST /register         注册（验证码 + 设密）        │
+│  │    POST /set-password     验证码确认后 设/改密码       │
+│  │    POST /reset-password   忘记密码重置（同 set）       │
+│  │    POST /change-password  改密（需 Bearer + 旧密码）   │
+│  │    GET  /password-status  查询当前账号是否设过密码     │
+│  │    GET  /health           健康检查                     │
+│  ├─ api/data-api.js (HTTP Function)                      │
+│  │    GET  /health           健康检查                     │
+│  │    GET/POST/PATCH/DELETE /b/:table  业务 CRUD         │
+│  │      （children/courses/checkins/user_prefs/         │
+│  │        user_passwords/email_otps）                    │
+│  │    ★ 业务安全：owner_id 服务端从 JWT 强制注入，       │
+│  │      表名/写入列/过滤列/排序列全白名单                │
+│  ├─ lib/db.js   postgres.js 池（事务模式 pooler :6543）  │
+│  ├─ lib/auth.js  requireAuthAsync + CORS 头 + JWT 验签   │
+│  ├─ lib/jwt.js  signJwt / verifyJwt（共享密钥）          │
+│  └─ uid = sha256(email).slice(0, 32)  ← 跨设备稳定      │
 └────────────────────────────────────────────────────────┘
-                       │ service role (init via TCB_SDK_SECRET_ID/SECRET_KEY)
+                       │ DATABASE_URL (Supabase 事务模式 pooler :6543)
                        ▼
 ┌────────────────────────────────────────────────────────┐
-│  CloudBase PostgreSQL (public schema)                   │
-│  ├─ children   id, owner_id, name, emoji, color, ...   │
-│  ├─ courses    id, owner_id, child_id, total_hours, ...│
-│  ├─ checkins   id, owner_id, child_id, course_id, ...  │
-│  ├─ email_otps  OTP 临时存储（hash + salt + attempts）  │
-│  └─ user_prefs  owner_id PK + active_child_id          │
-│                                                       │
-│  ✅ RLS 已开启 + anon policy/权限已删（20260817000000）│
-│     anon 直连 PostgREST：无 policy + 无权限 → 全拒     │
+│  Supabase PostgreSQL (public schema)                    │
+│  ├─ children   id, owner_id, name, emoji, color, ...    │
+│  ├─ courses    id, owner_id, child_id, total_hours, ... │
+│  ├─ checkins   id, owner_id, child_id, course_id, ...   │
+│  ├─ email_otps OTP 临时记录（hash + salt + attempts）    │
+│  ├─ user_prefs  owner_id PK + active_child_id + theme   │
+│  ├─ user_passwords  email PK + scrypt 哈希（v0.3+）     │
+│  └─ backups  pg_cron 每日 03:03 快照（4 业务表 → JSONB）│
+│                                                        │
+│  ✅ RLS 已开启 + anon policy/权限已删（20260817000000） │
+│     anon 直连 PostgREST：无 policy + 无权限 → 全拒      │
+│  ✅ pg_cron 扩展已启用，backup_snapshot() 自动跑         │
 └────────────────────────────────────────────────────────┘
                        │ service role (BYPASSRLS)
                        ▲
        渲染端 fetch data-api /b/* 带 Authorization: Bearer <自签JWT>
 ```
+
+**部署**：
+- Vercel GitHub auto-deploy：push `main` → Vercel 自动 build + 部署最新 commit
+- 发版：push `v*` tag → GitHub Actions `.github/workflows/release.yml` 跑 desktop 端 electron-builder 打包
+- env 注入：Vercel 控制台 → Settings → Environment Variables（DATABASE_URL / JWT_SECRET / RESEND_API_KEY / MAIL_FROM）
 
 **数据隔离**：业务读写**全部走 data-api 云函数**，`owner_id` 由服务端从 JWT 注入（前端传的一律忽略）；数据库层 RLS 已开 + anon policy/权限已删，即使拆包拿到 publishable key 直连 PostgREST 也被拒。
 
@@ -73,9 +87,9 @@ sequenceDiagram
     actor User as 家长
     participant V as Vue 渲染端<br/>(App.vue / Stores)
     participant LS as localStorage<br/>/ sessionStorage
-    participant OTP as CloudBase HTTP Function<br/>auth-otp
+    participant OTP as Vercel HTTP Function<br/>auth-otp
     participant RS as Resend
-    participant PG as CloudBase PG<br/>(children / courses /<br/>checkins / user_prefs /<br/>email_otps)
+    participant PG as Supabase PG<br/>(children / courses /<br/>checkins / user_prefs /<br/>email_otps)
     participant MP as Electron 主进程<br/>(main.ts)
 
     Note over User, MP: ── 启动 + 登录 ──
@@ -134,7 +148,7 @@ sequenceDiagram
 ```
 
 **关键时序点**：
-- **步骤 1-8**：启动 + 登录（OTP 限流按 IP + 邮箱双维度，详见 `cloudbase/functions/auth-otp/index.js`）
+- **步骤 1-8**：启动 + 登录（OTP 限流按 IP + 邮箱双维度，详见 `vercel/api/auth-otp/[action].js`）
 - **步骤 9-13**：拉数据（`resetBusinessState` 必跑，避免上一个账号的 store 残留）
 - **步骤 14-17**：切换孩子（云端 user_prefs + 本地 localStorage 双写）
 
@@ -146,13 +160,17 @@ flowchart LR
     subgraph Desktop["Electron 桌面端"]
         UI[Vue 组件]
         Store[Pinia Stores<br/>auth / children /<br/>courses / checkins]
-        Lib[lib/cloudbase.ts<br/>SDK + JWT session]
+        Lib[lib/cloudbase.ts<br/>fetch + JWT session<br/>（文件名沿用历史）]
     end
 
-    subgraph CloudBase["CloudBase 云端"]
-        Otp[auth-otp<br/>HTTP Function]
-        Backup[pg-backup<br/>Event 定时触发]
-        PG[(CloudBase PG<br/>public schema)]
+    subgraph Vercel["Vercel Functions（自托管）"]
+        Otp[api/auth-otp<br/>HTTP Function]
+        Data[api/data-api<br/>HTTP Function]
+    end
+
+    subgraph Supabase["Supabase 云端"]
+        Cron[pg_cron 03:03]
+        PG[(Supabase PG<br/>public schema)]
     end
 
     subgraph Third["第三方"]
@@ -161,45 +179,53 @@ flowchart LR
 
     UI -->|点击 + 读 store| Store
     Store -->|businessApi()<br/>GET/POST/PATCH/DELETE /b/*| Lib
-    Lib -->|fetch data-api<br/>service role 直连| PG
+    Lib -->|fetch /api/data-api<br/>service role 直连| Data
+    Data --> PG
 
     UI -.sendCode.-> Otp
     Otp -->|写 email_otps| PG
     Otp -->|发邮件| Resend
     Otp -.verify (签 JWT).-> UI
 
-    Backup -.定时触发.-> PG
-    Backup -->|INSERT backups| PG
+    Cron -.定时触发.-> PG
+    Cron -->|INSERT backups| PG
 ```
 
 **关键边界**：
-- 渲染端**只走** data-api 云函数（`businessApi` → `/b/*`），**不**直连 PostgREST、**不**用数据库 key
+- 渲染端**只走** data-api HTTP Function（`businessApi` → `/b/*`），**不**直连 PostgREST、**不**用数据库 key
 - 业务读写权限 = 服务端 JWT（owner_id 强制注入）+ RLS 开启 + anon 无 policy/权限 三件套
-- `auth-otp` 是 **HTTP Function**，`pg-backup` 是 **Event Function（定时触发）**，都通过 service role 凭据直连 PG
+- `auth-otp` / `data-api` 是 Vercel **HTTP Function**，都通过 Supabase pooled connection 直连 PG（service role，BYPASSRLS）
+- pg_cron 替代了旧 CloudBase pg-backup Event 函数，每日 03:03 自动跑 `backup_snapshot()`
 
 ## 3. 目录速览
 
 ```
 kid-course-tracker/
 ├── AGENTS.md                ← 你正在读
-├── cloudbaserc.json         ← CloudBase 部署配置（已填真实 envId，含密钥已 gitignore）
-├── cloudbase/               ← CloudBase 后端资产
-│   ├── migrations/          ← SQL migration（按文件名升序执行，共 10 个）
-│   │   ├── 20260813055503_init_business.sql
-│   │   ├── 20260813055504_email_otps.sql
-│   │   ├── 20260813055505_email_otps_disable_rls.sql
-│   │   ├── 20260813055506_business_disable_rls.sql
-│   │   ├── 20260813055507_anon_policies.sql
-│   │   ├── 20260813055508_regrant.sql
-│   │   ├── 20260813222000_user_prefs.sql
-│   │   ├── 20260814100000_backups.sql
-│   │   ├── 20260814120000_user_prefs_anon.sql
-│   │   ├── 20260814130000_backups_anon.sql
-│   │   ├── 20260817000000_business_anon_harden.sql ← 删 anon policy + revoke
-│   │   └── 20260817000001_user_passwords.sql ← 可选密码登录（scrypt 哈希）
-│   └── functions/           ← 云函数
-│       ├── auth-otp/        ← HTTP 云函数（发码/验码/签 JWT）
-│       └── pg-backup/       ← Event 云函数（每日 PG 备份）
+├── .github/workflows/
+│   └── release.yml          ← 桌面端发版：推 v* tag → electron-builder 打 NSIS+portable
+├── vercel/                  ← Vercel Functions + lib
+│   ├── vercel.json          ← rewrites：/api/data-api/* → ?path=*
+│   ├── package.json
+│   ├── .env.local           ← 仅本机（gitignored，含 DATABASE_URL）
+│   ├── api/
+│   │   ├── auth-otp/
+│   │   │   └── [action].js  ← HTTP Function（send/verify/login/register/set/reset/change/password-status/health）
+│   │   └── data-api.js      ← HTTP Function（health + /b/* 业务 CRUD）
+│   └── lib/
+│       ├── db.js            ← postgres.js 池（事务模式 pooler :6543）
+│       ├── auth.js          ← requireAuthAsync + CORS 头
+│       └── jwt.js           ← signJwt / verifyJwt（共享密钥）
+│
+├── supabase/
+│   ├── config.toml          ← Supabase CLI 配置
+│   └── migrations/          ← SQL migration（按文件名升序手动应用）
+│       ├── 20260908000001_init_schema.sql         ← 6 业务表 + RLS
+│       ├── 20260908000002_harden_security.sql      ← 删 anon policy + revoke
+│       ├── 20260908000003_daily_backup_cron.sql   ← pg_cron + backup_snapshot()
+│       ├── 20260909140000_user_prefs_theme.sql    ← user_prefs 加 theme 列
+│       ├── 20260909173709_fix_email_otps_seq.sql  ← 修 email_otps 序列不同步
+│       └── ...
 │
 ├── desktop/                 ← 桌面端
 │   ├── AGENTS.md            ← 桌面端专属约定
@@ -220,7 +246,7 @@ kid-course-tracker/
 │   │   ├── components/      ← 通用 + 业务组件
 │   │   ├── stores/          ← Pinia：auth/children/courses/checkins/db
 │   │   │   └── children.ts  ← 包含 user_prefs 激活孩子同步
-│   │   ├── lib/cloudbase.ts ← CloudBase SDK 初始化 + JWT session
+│   │   ├── lib/cloudbase.ts ← fetch + JWT session（文件名沿用历史）
 │   │   ├── types/           ← 共享 TS 类型
 │   │   ├── utils/           ← 日期/金额/校验/Excel
 │   │   └── styles/
@@ -392,55 +418,61 @@ pnpm exec electron dist-electron/main.mjs --open-devtools
 ### 6.2 字段约定
 
 - 所有业务表 `owner_id TEXT NOT NULL`：账号 uid（= `sha256(email).slice(0,32)`）
-- 业务外键（child_id/course_id）用 TEXT 而非 FK：CloudBase PG 的 RLS 隔离下跨表 FK 经常被绕过
+- 业务外键（child_id/course_id）用 TEXT 而非 FK：Supabase RLS 隔离下跨表 FK 经常被绕过
 - 索引：`(owner_id, sort_order)`、`(child_id)`、`(paid_at DESC)`、`(expires_at)`
 
 ### 6.3 migration 怎么加
 
 文件名格式 `YYYYMMDDHHMMSS_xxx.sql`，数字前缀保证按时间顺序跑。
-```bash
-# 跑全部 migration（bash 下 OK）
-tcb db execute -e <envId> --sql "$(cat cloudbase/migrations/xxx.sql)"
-# 或分多条跑（DDL 一条一条更稳）
+```powershell
+# 直连 Supabase（事务模式 pooler :6543，事务内跑 DDL 走非事务模式 session pooler :5432）
+# 推荐用 node 脚本，幂等 + 易读：
+node scripts/apply-migration.cjs supabase/migrations/xxx.sql
+
+# 或 Supabase CLI（如果项目已 link）：
+supabase db push  # 推送本地 migrations/ 到远端
 ```
 
-⚠️ **Windows PowerShell 下 `--sql "$(cat file)"` 不可靠**（已踩坑，2026-08-17）：
-- 多行 SQL 可能被拆坏、含 `$` 的 SQL（如 `scrypt$16384$...` 哈希）会被 PowerShell 当变量插值截断
-- 现象：命令"成功"返回 0 行受影响，但表实际没建出来 / 数据被写坏（存成 `scrypt`）
-- 正确姿势：
-  ```powershell
-  tcb db execute -e <envId> --sql "$(Get-Content -Raw -Encoding UTF8 cloudbase/migrations/xxx.sql)"
-  # 或把 --sql 内联成单条语句执行
-  ```
+⚠️ **Windows PowerShell 下用 postgres.js 直连最稳**（已踩坑，2026-08-17）：
+- 多行 SQL 用 `Get-Content -Raw -Encoding UTF8` 读取，避免 PowerShell 把 `$` 当变量插值（如 `scrypt$16384$...` 哈希被截断成 `scrypt`）
+- 跑完用 `to_regclass('public.<表名>')` 验证表真实存在
 
 ## 7. 部署
 
-### 7.1 云函数
+### 7.1 Vercel Functions
+
+走 GitHub auto-deploy：`git push origin main` → Vercel 自动 build + 部署最新 commit。
 
 ```bash
-# 单函数部署
-tcb fn deploy auth-otp -e <envId>
-# 走 cloudbaserc.json
-tcb fn deploy --config-file cloudbaserc.json
+# 查部署状态
+vercel ls electron-kid-course-tracker
+vercel logs --project electron-kid-course-tracker --cwd vercel
+
+# 本地 .env.local（gitignored）放 DATABASE_URL / JWT_SECRET / RESEND_API_KEY / MAIL_FROM
+# 平台侧 Vercel 控制台 → Settings → Environment Variables 配同名 env
 ```
 
-⚠️ 部署 HTTP Function 改完代码后建议**强制重传**（cos 可能缓存）：
-```bash
-tcb fn deploy auth-otp -e <envId> --force --deployMode zip
-tcb fn deploy data-api -e <envId> --force --deployMode zip
-```
+⚠️ 函数代码改完直接 push 即可，**无需手动 `--force`**（Vercel 是 immutable deploy，不缓存）。
+若改了 env，重 deploy：`vercel ls` 找到上一个 Production 部署 → Redeploy。
 
 ### 7.2 路由
 
-云函数 `auth-otp` / `data-api` 暴露 HTTP，必须加 `WEB_SCF` 类型路由（不是默认的 `SCF`）：
-```bash
-tcb routes add -d '{"routes":[{"path":"/auth-otp","upstreamResourceType":"WEB_SCF","upstreamResourceName":"auth-otp","method":["GET","POST"]}]}'
-tcb routes add -d '{"routes":[{"path":"/data-api","upstreamResourceType":"WEB_SCF","upstreamResourceName":"data-api","method":["GET","POST"]}]}'
+`vercel.json` 用 `rewrites` 把 `/api/data-api/*` 转发到 `/api/data-api?path=*`：
+```json
+{
+  "rewrites": [
+    { "source": "/data-api/:path*", "destination": "/api/data-api?path=:path*" },
+    { "source": "/api/data-api/:path*", "destination": "/api/data-api?path=:path*" }
+  ]
+}
 ```
+- `/api/auth-otp/{send,verify,login,...}` → `api/auth-otp/[action].js`
+- `/api/data-api/{health,b/<table>}` → `api/data-api.js`
+- 桌面端 `.env.production`：`VITE_AUTH_OTP_URL=https://<host>/api/auth-otp`、`VITE_DATA_API_URL=https://<host>/api/data-api`
 
 ### 7.3 数据库
 
-migration 改完直接 `tcb db execute` 跑；不推荐自动 migration（脚本会改 schema 风险大）。⚠️ 在 PowerShell 下务必用 `Get-Content -Raw -Encoding UTF8` 传参（见 §6.3），跑完用 `SELECT` 验证表真实存在（`tcb db execute` 返回 0 行不代表建表失败）。
+migration 改完用 postgres.js 直连 Supabase 跑（见 §6.3）。**不推荐** Supabase auto-migration（脚本会改 schema 风险大）。跑完用 `to_regclass('public.<表>')` 验证表真实存在。
 
 ### 7.4 管理员白名单 — 已下线（v0.6+）
 
@@ -466,8 +498,8 @@ pnpm release 1.2.3                   # 直跳指定版本
 5. CI 跑完 → `https://github.com/<owner>/<repo>/releases/tag/vX.Y.Z` 自动出现 .exe 资产
 
 **首次配 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
-- `VITE_AUTH_OTP_URL`（如 `https://<envId>.ap-shanghai.app.tcloudbase.com/auth-otp`）
-- `VITE_DATA_API_URL`（如 `https://<envId>.ap-shanghai.app.tcloudbase.com/data-api`）
+- `VITE_AUTH_OTP_URL`（如 `https://<host>/api/auth-otp`）
+- `VITE_DATA_API_URL`（如 `https://<host>/api/data-api`）
 - `GITHUB_TOKEN` 自动提供，无需手动配
 
 ⚠️ **package.json version 才是 electron-builder 命名产物的依据**，不是 git tag。
@@ -492,15 +524,19 @@ pnpm release 1.2.3                   # 直跳指定版本
 
 - **Vite + Vue Router + 异步 auth bootstrap** —— `router.isReady()` 只 await 第一次 beforeEach。如果 `auth.status === 'bootstrapping'` 时守卫放行，isReady 立刻 resolve，之后 bootstrap 改 status 没人再触发 redirect。`main.ts` 必须在 `await router.isReady()` 后主动 `router.replace` 纠偏。
 
-- **CloudBase SCF 环境变量前缀** —— `tcb config update fn` 拒绝 `SCF_/QCLOUD_/TENCENTCLOUD_` 前缀。改用普通前缀（如 `TCB_SDK_SECRET_ID`）再在函数代码里读。
+- **Vercel Function + postgres.js：max:1 + Promise.all = 300s 超时** —— `vercel/lib/db.js` 默认 `max: 1`；handler 内 `Promise.all` 跑多段 sql.query 看似并发，**实际客户端侧排队串行**（同 client 拿不到 2 条连接）。若一个 handler 跑 2+ 段 SQL，**把 `max` 调到 4-5**（postgres.js 文档推荐；事务模式 pooler :6543 仍 OK）。现象：浏览器侧 (待处理) 一直挂，Vercel 日志 `Task timed out after 300 seconds`。详见 agent memory。
 
-- **CloudBase @cloudbase/node-sdk rdb 必须指定 schema** —— `app.rdb({ database: 'public' })` 而不是 envId。否则报 `PGRST106 Invalid schema: <envId>`。
+- **Supabase 事务模式 pooler (port 6543) + 跨实例并发** —— 多个 Vercel Function 实例同时跑，每个实例各拿一条 pooler 连接。pooler 分配/释放延迟叠加 + pool 内慢查询会瞬间占满 → 实例排队等连接 → 300s。修法：(1) `max: 1` 调大；(2) 前端不要 `Promise.allSettled([4 个接口])` 一次性打，改成"按 tab 懒加载"；(3) `email_otps` 等大表加部分索引。详见 agent memory。
 
-- **CloudBase cloudbaserc.json type 字段大写** —— `"type": "HTTP"` 不是 `"http"`。
+- **Vercel CLI 推 GitHub 集成项目必失败** —— 用 Vercel CLI 59 在 `vercel/` 跑会报 `Root Directory "vercel" does not exist`。正解是 **commit + push → GitHub auto-deploy**（Vercel dashboard 已配 Root Directory='vercel'）。
 
-- **CloudBase RLS / service role 实测** —— 本项目 PG 角色 `service_role`（含 `cloudbase_postgres_pgdb_*` / `cloudbase_read_only_user_pgdb_*`）`rolbypassrls=true`（BYPASSRLS），云函数用 service key 直连**不受 RLS 限制**。所以收紧策略 = 删 anon policy + revoke anon 权限即可，无需给 service role 配 policy。
+- **Vercel CLI 会在仓库根生成 `.vercel/auth.json` 和 `.vercel/project.json`** —— **必须 .gitignore 排除**（含认证 token）。详见 `.gitignore`。
 
-- **CloudBase SCF WEB_SCF + scf_bootstrap 模式下必须保留 `require.main === module` 段** —— SCF 启动 `node index.js` 后模块顶层会执行（`require.main === module` 在 SCF 也成立），SCF 把容器内 9000 端口当 fastcgi 端口接 HTTP 请求，**必须**有 `http.createServer.listen(9000)`。**不要按老 SCF Event 模式删这段 + 改用 `exports.main`**——`exports.main` 在 v3.7.3 这套环境不被调，删了之后远端返 443/404。修法：在 http.createServer 内按 `new URL(req.url).pathname` 分发到 handleXxx 函数，exports.main 保留但返个 `event_mode_not_supported` 备用。
+- **Vercel Function + postgres.js + schema 必须显式指定** —— `postgres(url, { ... })` 不传 schema 不会自动选 public，但本项目表都在 public，连接串用 Supabase 默认就行。如报错 `relation xxx does not exist` 大概率是 `search_path` 没设：在 db.js 里 `SET search_path TO public` 或 SQL 加 `public.<表>`。
+
+- **Supabase RLS / service role 实测** —— 本项目用 `postgres` 直连，**不走 Supabase anon/authenticated 角色**，不受 RLS 限制。所以收紧策略 = 删 anon policy + revoke anon 权限即可，`postgres` 连接无需配 policy。
+
+- **Vercel Function Node 默认 18，部分 postgres.js / jose 报 `ERR_REQUIRE_ESM`** —— Vercel Dashboard → Project Settings → General → Node.js Version 改 **20.x** 或 22.x。
 
 - **GitHub 匿名 API 限流（版本检查）** —— `electron/updater.ts` 别用 Electron `net.request`（走 Chromium 网络栈/系统代理，出口 IP 易被 GitHub API 403 限流）；用 Node 原生 `https` 直连。且 API 失败会自动降级到 `releases/latest` 的 302 Location 解析版本号（网页请求不受 API 限流）。改这块时保持双通道。
 
@@ -508,18 +544,19 @@ pnpm release 1.2.3                   # 直跳指定版本
 
 ## 9. 安全 TODO（**上线前必做**）
 
-1. 🔴 **轮换 publishable key**（已泄露在对话里）
-2. 🔴 **重新启用 RLS**：把 anon key 的权限收紧，业务读写改走 cloud function（service role）
+1. 🔴 **轮换 Vercel env 里的 RESEND_API_KEY / JWT_SECRET / DATABASE_URL**（如曾在对话/截屏里出现）
+2. ✅ **RLS 已收紧**：anon policy 已删，anon 权限已 revoke，业务读写全走 data-api（service role）—— 2026-08-17 落地
 3. 🟡 **OTP /verify 改用 attempts 全局计数**（当前每条码独立 5 次，可绕过）
 4. 🟡 **NSIS 代码签名**（避免 SmartScreen 警告）
-5. 🟢 **写每日 PG 备份 cron**（用 `tcb fn deploy` + 定时触发）
+5. ✅ **每日 PG 备份 cron**（Supabase pg_cron + backup_snapshot()，2026-09-08 落地）
 
 ## 10. agent 协作约定
 
-- **改 store / 写新表 / 改 migration** → 改完跑 `npx vue-tsc --noEmit`
-- **改 cloud function** → 改完 `tcb fn deploy auth-otp -e <envId>` 部署
-- **新建 cloud function** → 写完三件套（index.js / package.json / scf_bootstrap），**本地 `tcb fn run` 起 :9000 验 4 个鉴权分支**（health / 401 / 403 / 200）再 `tcb fn deploy --force --deployMode zip`
-- **打 release** → 必须用时间戳 output（见第 8 节坑）
+- **改 store / 写新表 / 改 migration** → 改完跑 `cd desktop && npx vue-tsc --noEmit`
+- **改 Vercel Function** → 改完 `git add` + `git commit` + `git push origin main`，**Vercel auto-deploy 自动接住**，无需手动 `vercel deploy`（手动 deploy 在 GitHub 集成项目上必失败，见 §8）
+- **新建 Vercel Function** → 写在 `vercel/api/` 下，跑 `node -e "import('./api/xxx.js').then(m => console.log(Object.keys(m)))"` 验证 export；本地烟测用 `vercel dev`（会自动跑 Next.js / Vercel Functions）
+- **改 env** → Vercel Dashboard → Settings → Environment Variables，**不要** 把密钥写进仓库 / `.env.*`（除 `vercel/.env.local` gitignored）
+- **打 release** → 桌面端 `cd desktop && pnpm release`（**不要**手动改 release 输出目录或 electron-builder 配置）
 - **不要** 直接改 `release/<ts>/win-unpacked/` 里的文件（asar 锁，重打会覆盖）
 - **不要** 删 `release.bak.*` 目录（Defender 锁，删不动，留着就行）
 - **写 memory**：跨项目适用 → `agents/mavis/memory/MEMORY.md`；仅本项目 → `desktop/AGENTS.md`

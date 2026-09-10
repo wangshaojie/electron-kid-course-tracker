@@ -73,8 +73,7 @@ kid-course-tracker/
 │       ├── 20260908000003_daily_backup_cron.sql
 │       └── 20260909140000_user_prefs_theme.sql     # v0.4.6 加 theme 列
 ├── docs/
-│   ├── release-guide.md      # CI 发版流程（已替换 v0.4.6 实际命令）
-│   └── migrate-to-supabase.md  # 历史：CloudBase → Supabase 迁移手册
+│   └── release-guide.md      # CI 发版流程（已替换 v0.4.6 实际命令）
 └── AGENTS.md                 # 架构文档（部署视图 / 时序图 / 数据流）
 ```
 

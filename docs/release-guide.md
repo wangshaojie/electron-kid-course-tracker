@@ -16,7 +16,7 @@
 | `VITE_AUTH_OTP_URL` | Vercel 函数 URL + `/auth-otp`，如 `https://<your-project>.vercel.app/auth-otp` |
 | `VITE_DATA_API_URL` | Vercel 函数 URL + `/data-api`，如 `https://<your-project>.vercel.app/data-api` |
 
-**只这 2 个**。v0.4.x 之后项目从 CloudBase 迁到 Vercel Functions + Supabase PG（详见 `migrate-to-supabase.md`），不再需要 `VITE_CLOUDBASE_ENV_ID` / `VITE_CLOUDBASE_ACCESS_KEY` 这 2 个 secret。
+**只这 2 个**。v0.4.x 之后项目从 CloudBase 迁到 Vercel Functions + Supabase PG（已下线 cloudbase/ 整个目录），不再需要 `VITE_CLOUDBASE_ENV_ID` / `VITE_CLOUDBASE_ACCESS_KEY` 这 2 个 secret。
 
 **2 个 secret 缺一不可**，漏一个 → 装的 .exe 启动白屏（Vite build 时 throw 进 bundle）。详细诊断见 [§5 踩坑历史](#5-踩坑历史白屏与修复)。
 

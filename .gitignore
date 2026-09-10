@@ -1,7 +1,6 @@
 # ── 密钥 / 本地配置 ─────────────────────────────
-# cloudbaserc.json 含 RESEND_API_KEY / TCB_SDK_SECRET / JWT_SECRET，禁止提交
-cloudbaserc.json
-cloudbaserc.local.json
+# vercel/.env.local 含 DATABASE_URL / JWT_SECRET / RESEND_API_KEY，禁止提交
+# （老 CloudBase 时代 cloudbaserc.json 已下线，这里保留规则兼容历史仓库）
 
 # ── 日志 / 构建产物 ────────────────────────────
 *.log
