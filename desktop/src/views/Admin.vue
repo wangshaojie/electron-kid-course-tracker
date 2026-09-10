@@ -312,12 +312,22 @@ async function loadLogins() {
   }
 }
 
-// ============== 整体刷新（按当前 tab 只刷当前 + 必要依赖）==============
+// ============== 整体刷新（按当前 tab 只刷当前）==============
+// 4 个 admin/* 接口同时打 Vercel 会让 Supabase pooler 饱和（之前 300s 超时的根因之一），
+// 进入页只拉当前 tab；切 tab / 点"刷新全部"才拉其他。
+async function loadCurrentTab() {
+  if (activeTab.value === 'users') return loadUsers()
+  if (activeTab.value === 'active') return loadActive()
+  if (activeTab.value === 'leaderboard') return loadLeaderboard()
+  if (activeTab.value === 'logins') return loadLogins()
+  return Promise.resolve()
+}
+
 async function refreshAll() {
   anyLoading.value = true
   try {
-    // 始终拉 4 个（很轻；任意失败不影响其他）
-    await Promise.allSettled([loadUsers(), loadActive(), loadLeaderboard(), loadLogins()])
+    // 当前 tab 必须刷
+    await loadCurrentTab()
     if (!usersError.value && !activeError.value && !leaderboardError.value && !loginsError.value) {
       lastFetched.value = new Date().toLocaleString('zh-CN', { hour12: false })
     }
