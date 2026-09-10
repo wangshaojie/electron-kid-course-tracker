@@ -247,7 +247,9 @@
 
 /* 选中态的 item 文字 */
 .dark-page .el-select__selected-item,
+.dark-page .el-select__selected-item *,
 .dark-page .el-select__placeholder,
+.dark-page .el-select__placeholder *,
 .dark-page .el-select__input,
 .dark-page .el-input__inner,
 .dark-page .el-date-editor .el-input__inner {
@@ -733,7 +735,9 @@
 
 :where(.el-dialog) .el-input__inner,
 :where(.el-dialog) .el-select__selected-item,
+:where(.el-dialog) .el-select__selected-item *,
 :where(.el-dialog) .el-select__placeholder,
+:where(.el-dialog) .el-select__placeholder *,
 :where(.el-dialog) .el-select__input,
 :where(.el-dialog) .el-date-editor .el-input__inner {
   color: var(--input-text) !important;

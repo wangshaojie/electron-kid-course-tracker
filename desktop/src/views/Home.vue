@@ -36,6 +36,11 @@ const courseRows = computed(() =>
     .sort((a, b) => a.remain_hours - b.remain_hours),
 )
 
+/** 进行中（未结课、未过期）的课程数 —— 卡片 hint 用 */
+const ongoingCount = computed(
+  () => courses.summaries.filter((s) => s.status !== 'done' && s.status !== 'expired').length,
+)
+
 function usedPct(s: CourseSummary): number {
   return s.total_hours > 0 ? Math.min(100, Math.round((s.used_hours / s.total_hours) * 100)) : 0
 }
@@ -95,10 +100,23 @@ async function signOut() {
       <!-- 汇总卡片（错位入场：60ms 间隔） -->
       <div class="mb-6 grid grid-cols-4 items-stretch gap-4">
         <div class="card-stagger" :style="{ animationDelay: '0ms' }">
-          <StatCard label="课程总数" :value="courses.count" unit="个" icon="📚" tone="brand" />
+          <StatCard
+            label="课程总数"
+            :value="courses.count"
+            unit="个"
+            icon="📚"
+            tone="brand"
+            :hint="`进行中 ${ongoingCount} 个`"
+          />
         </div>
         <div class="card-stagger" :style="{ animationDelay: '60ms' }">
-          <StatCard label="总投入" :value="formatMoney(courses.totalAmount)" icon="💰" tone="sky" />
+          <StatCard
+            label="总投入"
+            :value="formatMoney(courses.totalAmount)"
+            icon="💰"
+            tone="sky"
+            :hint="`共 ${courses.totalHours} 节课`"
+          />
         </div>
         <div class="card-stagger" :style="{ animationDelay: '120ms' }">
           <StatCard
@@ -111,7 +129,14 @@ async function signOut() {
           />
         </div>
         <div class="card-stagger" :style="{ animationDelay: '180ms' }">
-          <StatCard label="今日打卡" :value="todayCheckinCount" unit="次" icon="✅" tone="brand" />
+          <StatCard
+            label="今日打卡"
+            :value="todayCheckinCount"
+            unit="次"
+            icon="✅"
+            tone="brand"
+            :hint="`累计 ${checkins.items.length} 次`"
+          />
         </div>
       </div>
 

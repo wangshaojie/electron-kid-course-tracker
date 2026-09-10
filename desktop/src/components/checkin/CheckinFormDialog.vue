@@ -9,6 +9,7 @@ import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
 import { todayStr } from '@/utils/date'
 import { positiveNumber, dateRequired } from '@/utils/validators'
+import { courseColorOf } from '@/utils/courseColor'
 
 const props = defineProps<{
   modelValue: boolean
@@ -43,6 +44,8 @@ watch(
   () => props.modelValue,
   (v) => {
     if (v) {
+      // 每次打开都重置"显示已耗尽"状态,避免上次勾选带到下次
+      showExhausted.value = false
       form.value = {
         course_id: props.preselectedCourseId ?? courses.items[0]?.id ?? '',
         date: props.preselectedDate ?? todayStr(),
@@ -60,6 +63,19 @@ const selectedSummary = computed(() =>
 )
 
 const submitting = ref(false)
+
+/** 是否显示已耗尽(剩 0 节)的课程 —— 默认隐藏,避免误选 */
+const showExhausted = ref(false)
+/** 弹框里展示的课程:默认过滤掉已耗尽 */
+const availableCourses = computed(() =>
+  showExhausted.value
+    ? courses.summaries
+    : courses.summaries.filter((c) => c.remain_hours > 0),
+)
+/** 已耗尽课程数量,给"显示已耗尽 N 门"提示用 */
+const exhaustedCount = computed(
+  () => courses.summaries.filter((c) => c.remain_hours <= 0).length,
+)
 
 async function onSubmit() {
   if (!formRef.value) return
@@ -103,14 +119,33 @@ async function onSubmit() {
           v-model="form.course_id"
           placeholder="选择课程"
           class="w-full"
-          filterable
+          popper-class="checkin-course-popper"
         >
+          <template #prefix>
+            <span
+              v-if="form.course_id"
+              class="ml-1 mr-1 inline-block h-3 w-3 rounded-full"
+              :style="{ background: courseColorOf(form.course_id).bg, border: '1px solid ' + courseColorOf(form.course_id).text }"
+            />
+          </template>
           <el-option
-            v-for="c in courses.summaries"
+            v-for="c in availableCourses"
             :key="c.id"
-            :label="`${c.name} (剩 ${c.remain_hours} 节)`"
+            :label="c.name"
             :value="c.id"
-          />
+          >
+            <div class="flex w-full items-center gap-2">
+              <span
+                class="inline-block h-3 w-3 flex-shrink-0 rounded-full"
+                :style="{ background: courseColorOf(c.id).bg, border: '1px solid ' + courseColorOf(c.id).text }"
+              />
+              <span class="flex-1 truncate text-left">{{ c.name }}</span>
+              <span
+                class="text-xs"
+                :class="c.status === 'low' ? 'checkin-course-low' : 'checkin-course-dim'"
+              >剩 {{ c.remain_hours }} 节</span>
+            </div>
+          </el-option>
         </el-select>
       </el-form-item>
       <div
@@ -123,6 +158,15 @@ async function onSubmit() {
         <span :style="selectedSummary.status === 'low' ? 'color: var(--sun-2); font-weight: 600;' : ''">
           剩 {{ selectedSummary.remain_hours }} 节
         </span>
+      </div>
+      <div
+        v-if="exhaustedCount > 0 && !showExhausted"
+        class="checkin-exhausted-hint"
+      >
+        已隐藏 {{ exhaustedCount }} 门已耗尽课程
+        <el-link type="primary" :underline="false" @click="showExhausted = true">
+          显示
+        </el-link>
       </div>
       <el-form-item label="上课日期" prop="date">
         <el-date-picker
@@ -161,3 +205,45 @@ async function onSubmit() {
     </template>
   </el-dialog>
 </template>
+
+<style scoped>
+/* 课程下拉项:低课时用暖橙警示,普通项用柔和灰,不抢主色 */
+.checkin-course-low {
+  color: var(--sun-2);
+  font-weight: 600;
+}
+.checkin-course-dim {
+  color: var(--text-soft);
+}
+
+/* "已隐藏 N 门已耗尽"提示行 */
+.checkin-exhausted-hint {
+  margin: -8px 0 12px;
+  font-size: 12px;
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+</style>
+
+<style>
+/* 全局(popper 渲染到 body 下,scoped 不生效) */
+.checkin-course-popper .el-select-dropdown__item.is-selected {
+  /* 选中态:浅色背景 + 品牌色左边框 + 加粗,深色主题下也清晰可辨 */
+  background: var(--brand-soft-bg, rgba(63,184,122,0.12)) !important;
+  border-left: 3px solid var(--brand-1, #3FB87A);
+  font-weight: 600;
+  color: var(--brand-text, #1F7D4E) !important;
+}
+.checkin-course-popper .el-select-dropdown__item.is-selected::after {
+  content: '✓';
+  position: absolute;
+  right: 14px;
+  color: var(--brand-1, #3FB87A);
+  font-weight: 700;
+}
+.checkin-course-popper .el-select-dropdown__item:hover {
+  background: var(--btn-ghost-bg-hover, rgba(63,184,122,0.06)) !important;
+}
+</style>

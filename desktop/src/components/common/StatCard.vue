@@ -32,15 +32,15 @@ const iconBg: Record<NonNullable<Props['tone']>, string> = {
 </script>
 
 <template>
-  <div class="glass-card stat-card flex h-full items-center gap-4 p-4">
+  <div class="glass-card stat-card h-full p-4">
     <div
       v-if="icon"
-      class="stat-icon flex h-12 w-12 flex-shrink-0 items-center justify-center rounded-xl text-2xl"
+      class="stat-icon flex h-12 w-12 items-center justify-center rounded-xl text-2xl"
       :style="{ background: iconBg[tone] }"
     >
       {{ icon }}
     </div>
-    <div class="stat-body flex min-w-0 flex-1 flex-col">
+    <div class="stat-body">
       <p class="stat-label text-xs" style="color: var(--text-soft); letter-spacing: 0.04em;">{{ label }}</p>
       <p
         class="glass-num text-[28px] leading-tight tracking-tight num-fade"
@@ -60,21 +60,27 @@ const iconBg: Record<NonNullable<Props['tone']>, string> = {
 
 <style scoped>
 .stat-card {
-  /* 关键:让外层 grid item 拉满,内部 col 也撑高 */
+  /* 高度自适应内容即可,无需 stretch —— grid 父级已 stretch 到最高 item */
   min-height: 88px;
 }
+/* grid 布局:左 icon(固定) + 右 body(占满 + 垂直居中) */
+.stat-card {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: 16px;
+}
 .stat-body {
-  /* flex-col + flex-1 让内容垂直拉伸,占位元素(empty hint)撑到底 */
+  /* flex-col + justify-center 让内容真正垂直居中(高度由 grid 撑满) */
+  display: flex;
+  flex-direction: column;
   justify-content: center;
+  min-width: 0;
 }
 .stat-label {
   /* 强制一行,过长截断 */
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.stat-icon {
-  /* 图标区固定大小,不变形 */
-  flex-shrink: 0;
 }
 </style>

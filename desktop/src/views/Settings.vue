@@ -4,8 +4,6 @@
  *  - 宝贝档案管理
  *  - 外观(主题切换)
  *  - 账号安全
- *  - 数据存储说明
- *  - 清空指引(云端控制台)
  *  - 软件信息
  *  v7: 颜色全走 CSS 变量(深/浅主题通用),主题切换在外观卡片里
  */
@@ -97,10 +95,6 @@ async function onDelete(c: Child) {
   await checkins.refresh()
 }
 
-function onWipe() {
-  ElMessage.warning('请到 Supabase 控制台清空数据（Table Editor → 选表 → 删除行）')
-}
-
 /**
  * 用户点"检测更新"按钮。
  * 注意：发现新版本时主进程会主动 emit `update:available`，App.vue 已经会弹"立即更新"弹窗，
@@ -126,7 +120,7 @@ async function onCheckUpdate() {
   <div class="h-full overflow-y-auto dark-page p-6">
     <header class="mb-5">
       <h1 class="text-2xl font-bold text-dark-title">设置</h1>
-      <p class="text-sm text-dark-soft">宝贝管理 / 数据备份 / 关于</p>
+      <p class="text-sm text-dark-soft">宝贝管理 / 账号安全 / 外观 / 关于</p>
     </header>
 
     <div class="space-y-4">
@@ -192,7 +186,7 @@ async function onCheckUpdate() {
           </li>
         </ul>
         <p class="mt-3 text-xs text-dark-ghost">
-          删除宝贝会同时删除其所有课程和打卡记录（ON DELETE CASCADE）
+          删除宝贝会同时删除其所有课程和打卡记录（应用层自动级联）
         </p>
       </div>
 
@@ -223,29 +217,6 @@ async function onCheckUpdate() {
             <span v-if="theme.mode === opt.value" class="theme-card-check">✓</span>
           </button>
         </div>
-      </div>
-
-      <!-- 数据存储说明 -->
-      <div class="glass-card p-5">
-        <h3 class="mb-1 font-bold text-dark-title">☁️ 数据存储</h3>
-        <p class="mb-1 text-sm text-dark-body">
-          所有数据实时保存在云端 Supabase PostgreSQL，多设备登录看到同一份数据，本地不维护副本。
-        </p>
-        <p class="text-xs text-dark-soft">
-          导出 Excel 请到「上课记录 → 列表」工具栏的「📊 导出 Excel」按钮，按当前筛选直接导出。
-          完整数据可到 Supabase 控制台 → Table Editor 手动导出。
-        </p>
-      </div>
-
-      <!-- 清空指引 -->
-      <div class="glass-card settings-warn-card p-5">
-        <h3 class="mb-1 font-bold settings-warn-title">🚨 清空所有数据</h3>
-        <p class="mb-3 text-sm text-dark-body">
-          数据存储在云端，本应用不提供一键清空（防止误删）。如需删除全部数据，请到 Supabase 控制台操作。
-        </p>
-        <el-button type="danger" plain @click="onWipe">
-          查看清空指引
-        </el-button>
       </div>
 
       <!-- 软件信息 -->
@@ -332,14 +303,6 @@ async function onCheckUpdate() {
 }
 .settings-active-name {
   color: var(--brand-text);
-}
-
-/* 清空数据卡(警告) */
-.settings-warn-card {
-  border-color: var(--danger-soft-border);
-}
-.settings-warn-title {
-  color: var(--danger-text);
 }
 
 /* ---- 主题卡片 ---- */
