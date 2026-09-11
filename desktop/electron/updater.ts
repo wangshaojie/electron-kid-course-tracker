@@ -356,9 +356,13 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  *   非法路径，cmd 立刻以 "文件名、目录名或卷标语法不正确" 退出。
  *   外表现象：黑框一闪而过、安装器界面永远不出现（v0.5.8 及以前一直是这个 bug）。
  *   windowsVerbatimArguments 让 Node 原样透传参数，cmd 才能拿到上面这条命令。
- *   （不用"写临时 .cmd 再执行"的替代方案：cmd 读 .cmd 文件按 ANSI/GBK 解析，
- *    路径含中文用户名时会乱码；spawn 的参数是 UTF-16，中文路径反而安全。）
- *   v0.5.14: 微调注释，加一句"为什么 ping 而不是 timeout"
+ *   v0.5.17: 改用临时 .bat 跑 sleep+start。上一版是把整段 script 拼成
+ *     `ping ... > nul & start ...` 一次性 cmd /c 跑，但 windowsVerbatimArguments
+ *     + Node 自动给 script 加首尾引号 → cmd 把 > 字面化（不当重定向），ping
+ *     回显就漏到控制台（用户看到黑框）。临时 .bat 不会被外层引号吞重定向。
+ *   （.bat 文件名用全 ASCII、内容纯 ASCII，绕开"cmd 读 .bat 按 ANSI/GBK 解析
+ *    路径含中文用户名会乱码"那个老坑——参数 %~1 %~2 是 UTF-16 字节，cmd 内部
+ *    不二次编码直接拼给 start，中文路径安全。）
  *
  * 返回 { ok } 表示"已经安排好了"，渲染端据此显示"正在重启…"；
  * 真正的安装/重启在进程退出后由 cmd 完成。
@@ -382,23 +386,41 @@ export function restartAndInstall(
     }
 
     // ping -n 3 ≈ 2s，等当前进程完全退出再动安装包
-    // （不用 timeout 命令：它要求 stdin 是控制台，stdio: ignore 下会直接报错）
-    const sleep = 'ping 127.0.0.1 -n 3 > nul'
-    // NSIS：/S 静默安装 + --updated（升级模式，不弹"应用正在运行"）+ /wait 装完再拉起新版本
-    //       "/D=" 不需要传，安装器自己从注册表读上次的安装目录
-    // portable：直接 start 新版绿色版 exe
-    const script = mode === 'nsis'
-      ? `${sleep} & start "" /wait "${localPath}" /S --updated & start "" "${process.execPath}"`
-      : `${sleep} & start "" "${localPath}"`
-    console.log(`[updater] 重启并安装（${mode}）: ${script}`)
-    writeRestartLog(`[${new Date().toISOString()}] restart(${mode})\n  ${script}\n`)
+    // 之前写法是拼成 `ping ... > nul & start ...` 整段让 cmd /c 一次跑，
+    // 但 windowsVerbatimArguments + Node 自动给 script 加首尾引号两个叠加，
+    // cmd 看到外层引号就把 > 字面化（不当重定向），ping 回显就漏到控制台
+    // —— 截图里那个黑框就是 ping 在打 "来自 127.0.0.1 的回复"。
+    //
+    // 修法：写一个临时 .bat 文件，cmd 直接解析 .bat 里的命令（.bat 不会被
+    //       spawn 的首尾引号吞重定向）。.bat 路径放在 %TEMP% 全 ASCII 路径
+    //       下，绕开"路径含中文 + ANSI 解析乱码"那个老坑（v0.5.9 注释记过）。
+    const batDir = path.join(os.tmpdir(), 'TimeWell-update')
+    fs.mkdirSync(batDir, { recursive: true })
+    const batPath = path.join(batDir, mode === 'nsis' ? 'upgrade-nsis.bat' : 'upgrade-portable.bat')
 
-    spawn('cmd.exe', ['/c', script], {
+    // NSIS 升级：sleep 等当前进程退干净 → 静默装包（/S + --updated）→ 装完拉起新版本
+    // portable 升级：sleep → 直接 start 下载好的新版绿色版（不替换旧文件，用户自行覆盖）
+    const batBody = mode === 'nsis'
+      ? `@echo off\r\nping 127.0.0.1 -n 3 > nul\r\nstart "" /wait "%~1" /S --updated\r\nstart "" "%~2"\r\n`
+      : `@echo off\r\nping 127.0.0.1 -n 3 > nul\r\nstart "" "%~1"\r\n`
+
+    // 写 .bat：必须用 UTF-8 编码（虽然内容是纯 ASCII，但保持好习惯）
+    fs.writeFileSync(batPath, batBody, { encoding: 'utf8' })
+    console.log(`[updater] 重启并安装（${mode}）: bat=${batPath}, exe=${localPath}, self=${process.execPath}`)
+    writeRestartLog(`[${new Date().toISOString()}] restart(${mode})\n  bat=${batPath}\n  exe=${localPath}\n  self=${process.execPath}\n`)
+
+    // spawn .bat：%1=localPath, %2=process.execPath（仅 nsis 用到）
+    // ★ 关键 windowsVerbatimArguments: true（v0.5.9 修的坑）：
+    //   路径含中文用户名时（process.execPath 经常是 C:\Users\<中文名>\...），
+    //   Node 默认会按系统 ANSI 重新编码 argv，cmd 拿到的是乱码路径。
+    //   原样透传 UTF-16 让 cmd 直接读正确字符。
+    const batArgs = mode === 'nsis'
+      ? [batPath, localPath, process.execPath]
+      : [batPath, localPath]
+    spawn('cmd.exe', ['/c', batPath, ...batArgs], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
-      // ★ 关键：原样透传参数。少了它，命令里的引号会被 Node 转义成 \"，
-      //   cmd 解析失败后立刻退出 —— 正是"黑框一闪、安装界面不出"的原因
       windowsVerbatimArguments: true,
     }).unref()
 
