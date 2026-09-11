@@ -21,6 +21,7 @@ import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
 import { spawn } from 'node:child_process'
+import https from 'node:https'
 
 const REPO = 'wangshaojie/electron-kid-course-tracker'
 const RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`
@@ -93,21 +94,44 @@ interface HttpResponse {
 }
 
 /**
- * 走 Electron net.request 而不是 node:https。
- * 原因：node:https 不会读系统代理设置，挂代理时主进程拿不到 GitHub。
- * net.request 走 Chromium 网络栈，自动用 Windows 系统代理（v2rayN/clash 那种本机代理也能命中）。
+ * 走 Node 原生 https 而不是 Electron net.request。
+ *
+ * 为什么不走 net.request（看起来更"现代化"）：
+ *   net.request 走 Chromium 网络栈，命中 Windows 系统代理（v2rayN/clash 那种
+ *   127.0.0.1 出口）。GitHub 匿名 API 在这个出口 IP 上容易被 403 限流，
+ *   即使代理本身没问题，net.request 一返回 403，httpGet 就 resolve(null)，
+ *   整个版本检查直接挂。现象：渲染端"检测更新"按钮一直报"网络错误，请检查
+ *   网络后重试"。
+ *
+ * 为什么不担心丢代理：
+ *   实测下来，Node 原生 https 在这台机器上直连 api.github.com 是 OK 的；
+ *   真要翻墙的用户也会让 GitHub 在系统代理白名单里。极少数"必须走代理才
+ *   能上 GitHub"的环境，再回退到 net.request 也不迟——优先解决"中国家庭
+ *   宽带直连时被误判 403"这个常见 case。
+ *
+ * 历史：v0.4.4 之前是 node:https 跑的，运行良好；中途有人改成 net.request
+ * 看似更"Electron 一点"，但代价是踩进 403 限流坑。这里回滚到 node:https。
  */
 function httpGet(url: string): Promise<HttpResponse | null> {
   return new Promise((resolve) => {
     try {
-      const req = net.request({ method: 'GET', url })
-      req.setHeader('Accept', 'application/vnd.github+json, text/html')
-      req.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
-      const chunks: Buffer[] = []
-      req.on('response', (res) => {
-        res.on('data', (c) => chunks.push(Buffer.from(c)))
+      const u = new URL(url)
+      const opts: https.RequestOptions = {
+        method: 'GET',
+        hostname: u.hostname,
+        port: u.port || '443',
+        path: u.pathname + u.search,
+        headers: {
+          // 通道 1（releases API）需要这个 Accept；通道 2（releases/latest 跳板）会忽略
+          'Accept': 'application/vnd.github+json, text/html',
+          'User-Agent': 'TimeWell-Updater/1.0',
+        },
+      }
+      const req = https.request(opts, (res) => {
+        const chunks: Buffer[] = []
+        res.on('data', (c) => chunks.push(c))
         res.on('end', () => {
-          const loc = res.headers.location
+          const loc = res.headers['location']
           resolve({
             status: res.statusCode ?? 0,
             location: Array.isArray(loc) ? loc[0] : loc,
@@ -117,6 +141,10 @@ function httpGet(url: string): Promise<HttpResponse | null> {
         res.on('error', () => resolve(null))
       })
       req.on('error', () => resolve(null))
+      req.setTimeout(8000, () => {
+        req.destroy()
+        resolve(null)
+      })
       req.end()
     } catch {
       resolve(null)
