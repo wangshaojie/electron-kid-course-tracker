@@ -1,20 +1,22 @@
 /**
  * 版本更新 —— 统一策略：
- *   不管是 NSIS 安装版还是 portable 绿色版，主进程都用 https + fs 直接把
- *   .exe 装包下载到 %TEMP%\TimeWell-update\，下载过程中把进度推给渲染端
- *   （渲染端弹"下载进度弹框"），下载完成后推 localPath 给渲染端。
+ *   不管是 NSIS 安装版还是 portable 绿色版，主进程都用 Electron net.request
+ *   + fs 直接把 .exe 装包下载到 %TEMP%\TimeWell-update\，下载过程中把进度
+ *   推给渲染端（渲染端弹"下载进度弹框"），下载完成后推 localPath 给渲染端。
  *   渲染端点"重启并安装" → 主进程退出 + 拉起安装包（见 restartAndInstall）。
  *   失败时回退到"前往 GitHub Release 页面"。
+ *
+ * 为什么用 net.request 而不是 node:https：
+ *   挂系统代理（v2rayN/clash 之类 127.0.0.1:xxxx）时，浏览器能访问 GitHub
+ *   但 node:https 直连不读系统代理，主进程会卡在 TLS 握手 → 渲染端一直停在
+ *   "正在连接下载源…"。net.request 走 Chromium 网络栈，自动用系统代理。
  *
  * 历史：v0.4.4 之前 NSIS 走 electron-updater 自动静默安装，但 asar 打包后
  * electron-updater → graceful-fs → fs-extra 动态 require('fs') 在 asar 里
  * 不支持，会在主进程启动时抛 "Dynamic require of 'fs' is not supported"。
- * 统一走手动下载，依赖更干净，NSIS 用户体验退化为"下载 → 双击安装"，
- * 但跨两种安装形态的体验一致、也避免了 electron-updater 的多个 asar 坑
- * (winCodeSign / latest.yml 缺失等)。
+ * 统一走手动下载，依赖更干净，跨两种安装形态的体验一致。
  */
-import { app, BrowserWindow } from 'electron'
-import https from 'node:https'
+import { app, BrowserWindow, net } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
@@ -90,20 +92,19 @@ interface HttpResponse {
   body: string
 }
 
+/**
+ * 走 Electron net.request 而不是 node:https。
+ * 原因：node:https 不会读系统代理设置，挂代理时主进程拿不到 GitHub。
+ * net.request 走 Chromium 网络栈，自动用 Windows 系统代理（v2rayN/clash 那种本机代理也能命中）。
+ */
 function httpGet(url: string): Promise<HttpResponse | null> {
   return new Promise((resolve) => {
-    const u = new URL(url)
-    const req = https.get(
-      {
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        headers: {
-          Accept: 'application/vnd.github+json, text/html',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)',
-        },
-      },
-      (res) => {
-        const chunks: Buffer[] = []
+    try {
+      const req = net.request({ method: 'GET', url })
+      req.setHeader('Accept', 'application/vnd.github+json, text/html')
+      req.setHeader('User-Agent', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)')
+      const chunks: Buffer[] = []
+      req.on('response', (res) => {
         res.on('data', (c) => chunks.push(Buffer.from(c)))
         res.on('end', () => {
           const loc = res.headers.location
@@ -114,9 +115,12 @@ function httpGet(url: string): Promise<HttpResponse | null> {
           })
         })
         res.on('error', () => resolve(null))
-      },
-    )
-    req.on('error', () => resolve(null))
+      })
+      req.on('error', () => resolve(null))
+      req.end()
+    } catch {
+      resolve(null)
+    }
   })
 }
 
@@ -202,25 +206,22 @@ function pickNsisInstallerAsset(release: GhRelease, version: string): GhReleaseA
 
 function downloadFile(url: string, dest: string, onProgress?: (downloaded: number, total: number) => void): Promise<number> {
   return new Promise((resolve, reject) => {
-    const file = fs.createWriteStream(dest)
-    const u = new URL(url)
-    const req = https.get(
-      {
-        hostname: u.hostname,
-        path: u.pathname + u.search,
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-      },
-      (res) => {
+    try {
+      fs.mkdirSync(path.dirname(dest), { recursive: true })
+      const file = fs.createWriteStream(dest)
+      const req = net.request({ method: 'GET', url })
+      req.setHeader('User-Agent', 'Mozilla/5.0')
+      req.on('response', (res) => {
         if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           // 跟随重定向
           file.close()
-          fs.unlinkSync(dest)
+          try { fs.unlinkSync(dest) } catch { /* */ }
           downloadFile(res.headers.location, dest, onProgress).then(resolve, reject)
           return
         }
         if (res.statusCode !== 200) {
           file.close()
-          fs.unlinkSync(dest)
+          try { fs.unlinkSync(dest) } catch { /* */ }
           reject(new Error(`HTTP ${res.statusCode}`))
           return
         }
@@ -230,15 +231,27 @@ function downloadFile(url: string, dest: string, onProgress?: (downloaded: numbe
           downloaded += chunk.length
           onProgress?.(downloaded, total)
         })
+        res.on('end', () => {
+          file.end()
+        })
+        res.on('error', (e) => {
+          try { file.close() } catch { /* */ }
+          try { fs.unlinkSync(dest) } catch { /* */ }
+          reject(e)
+        })
+        // 把 net.IncomingMessage 接到 fs.WriteStream
         res.pipe(file)
         file.on('finish', () => file.close(() => resolve(downloaded)))
-      },
-    )
-    req.on('error', (e) => {
-      try { file.close() } catch { /* */ }
-      try { fs.unlinkSync(dest) } catch { /* */ }
-      reject(e)
-    })
+      })
+      req.on('error', (e) => {
+        try { file.close() } catch { /* */ }
+        try { fs.unlinkSync(dest) } catch { /* */ }
+        reject(e)
+      })
+      req.end()
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)))
+    }
   })
 }
 
