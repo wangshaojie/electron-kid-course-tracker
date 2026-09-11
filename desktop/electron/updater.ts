@@ -316,8 +316,12 @@ export function restartAndInstall(
 
     // ping -n 3 ≈ 2s，等当前进程完全退出再动安装包
     const sleep = 'ping 127.0.0.1 -n 3 > nul'
+    // NSIS：去掉 /S 让安装器显示界面（和 home-ledger autoUpdater.quitAndInstall(false, false)
+    //   的语义一致），去掉 /wait 避免 cmd 阻塞；装包会自己拉起新版本，
+    //   旧进程也已退出，覆盖安装不会失败
+    // portable：直接 start 新 exe（不替换旧文件，由用户自行覆盖）
     const script = mode === 'nsis'
-      ? `${sleep} & start "" /wait "${localPath}" /S & start "" "${process.execPath}"`
+      ? `${sleep} & start "" "${localPath}"`
       : `${sleep} & start "" "${localPath}"`
     console.log(`[updater] 重启并安装（${mode}）: ${script}`)
     spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
