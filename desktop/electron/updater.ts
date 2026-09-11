@@ -330,6 +330,7 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  *   windowsVerbatimArguments 让 Node 原样透传参数，cmd 才能拿到上面这条命令。
  *   （不用"写临时 .cmd 再执行"的替代方案：cmd 读 .cmd 文件按 ANSI/GBK 解析，
  *    路径含中文用户名时会乱码；spawn 的参数是 UTF-16，中文路径反而安全。）
+ *   v0.5.14: 微调注释，加一句"为什么 ping 而不是 timeout"
  *
  * 返回 { ok } 表示"已经安排好了"，渲染端据此显示"正在重启…"；
  * 真正的安装/重启在进程退出后由 cmd 完成。
