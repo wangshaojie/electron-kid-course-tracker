@@ -318,6 +318,7 @@ export function restartAndInstall(
 
     if (process.platform !== 'win32') {
       // 非 Windows（理论上不会走到）只做"打开装包"
+      //   v0.5.9 改 windowsVerbatimArguments 后只在 Windows 路径生效，macOS / Linux 走老分支
       spawn(localPath, [], { detached: true, stdio: 'ignore' }).unref()
       setTimeout(() => app.quit(), 300)
       return { ok: true }
