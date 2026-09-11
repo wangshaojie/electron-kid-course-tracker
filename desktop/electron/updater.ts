@@ -291,9 +291,18 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  *
  * 实现：把整条链路交给一个 detached 的 cmd.exe（用 ping 当 sleep，等当前
  * 进程退干净），主进程随后 app.quit()：
- *   NSIS    ：静默安装（/S）→ 装完 start 应用（安装目录不变，所以复用 execPath）
- *   portable：直接 start 下载好的新版 portable exe（绿色版不覆盖旧文件，
+ *   NSIS    ：start 装包（不带 /S）→ 安装器显示界面，装完它自己拉起新版本
+ *   portable：start 下载好的新版 portable exe（绿色版不覆盖旧文件，
  *             用户自行替换即可）
+ *
+ * ★ 必须带 windowsVerbatimArguments: true（v0.5.9 修的坑）：
+ *   Node 在 Windows 上拼子进程命令行时会把参数里的 " 转义成 \" 并在外层再包一层
+ *   引号，而 cmd.exe 不认反斜杠转义 —— 于是 `start "" "C:\...\x.exe"` 被解析成
+ *   非法路径，cmd 立刻以 "文件名、目录名或卷标语法不正确" 退出。
+ *   外表现象：黑框一闪而过、安装器界面永远不出现（v0.5.8 及以前一直是这个 bug）。
+ *   windowsVerbatimArguments 让 Node 原样透传参数，cmd 才能拿到上面这条命令。
+ *   （不用"写临时 .cmd 再执行"的替代方案：cmd 读 .cmd 文件按 ANSI/GBK 解析，
+ *    路径含中文用户名时会乱码；spawn 的参数是 UTF-16，中文路径反而安全。）
  *
  * 返回 { ok } 表示"已经安排好了"，渲染端据此显示"正在重启…"；
  * 真正的安装/重启在进程退出后由 cmd 完成。
@@ -315,16 +324,23 @@ export function restartAndInstall(
     }
 
     // ping -n 3 ≈ 2s，等当前进程完全退出再动安装包
+    // （不用 timeout 命令：它要求 stdin 是控制台，stdio: ignore 下会直接报错）
     const sleep = 'ping 127.0.0.1 -n 3 > nul'
-    // NSIS：去掉 /S 让安装器显示界面（和 home-ledger autoUpdater.quitAndInstall(false, false)
-    //   的语义一致），去掉 /wait 避免 cmd 阻塞；装包会自己拉起新版本，
-    //   旧进程也已退出，覆盖安装不会失败
-    // portable：直接 start 新 exe（不替换旧文件，由用户自行覆盖）
-    const script = mode === 'nsis'
-      ? `${sleep} & start "" "${localPath}"`
-      : `${sleep} & start "" "${localPath}"`
+    // 不带 /S：让 NSIS 显示安装界面（对齐 home-ledger quitAndInstall(false, false)）
+    // 不带 /wait：cmd 不阻塞，装完由安装器自己 ExecShell 拉起新版本
+    // nsis 与 portable 的命令完全一致，差别只在"起来的是装包还是绿色版 exe"
+    const script = `${sleep} & start "" "${localPath}"`
     console.log(`[updater] 重启并安装（${mode}）: ${script}`)
-    spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+    writeRestartLog(`[${new Date().toISOString()}] restart(${mode}) → ${localPath}\n`)
+
+    spawn('cmd.exe', ['/c', script], {
+      detached: true,
+      stdio: 'ignore',
+      windowsHide: true,
+      // ★ 关键：原样透传参数。少了它，命令里的引号会被 Node 转义成 \"，
+      //   cmd 解析失败后立刻退出 —— 正是"黑框一闪、安装界面不出"的原因
+      windowsVerbatimArguments: true,
+    }).unref()
 
     // 给渲染端留一点时间收到 { ok } 并显示"正在重启…"，然后退出
     setTimeout(() => app.quit(), 320)
@@ -332,6 +348,18 @@ export function restartAndInstall(
   } catch (e) {
     return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
+}
+
+/**
+ * 把"重启并安装"的现场追加到 %TEMP%\TimeWell-update\restart.log。
+ * 这条链路是"主进程退出后才执行"的，失败时没有 UI 能报错，只能靠日志排查。
+ */
+function writeRestartLog(line: string): void {
+  try {
+    const dir = path.join(os.tmpdir(), 'TimeWell-update')
+    fs.mkdirSync(dir, { recursive: true })
+    fs.appendFileSync(path.join(dir, 'restart.log'), line)
+  } catch { /* 日志失败不影响主流程 */ }
 }
 
 /* ========== 入口 ========== */
