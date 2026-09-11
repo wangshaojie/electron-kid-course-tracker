@@ -247,7 +247,7 @@ async function onCheckUpdate() {
               :disabled="updateStore.restarting"
               @click="updateStore.restartAndInstall()"
             >
-              {{ updateStore.restarting ? '正在重启…' : '立即重启安装' }}
+              {{ updateStore.restarting ? '正在启动安装…' : '立即重启安装' }}
             </button>
           </span>
         </div>

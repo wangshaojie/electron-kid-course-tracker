@@ -333,19 +333,27 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  * 实现：把整条链路交给一个 detached 的 cmd.exe（用 ping 当 sleep，等当前
  * 进程退干净），主进程随后 app.quit()。两种形态：
  *
- *   NSIS（静默升级，v0.5.9+）：
- *     ping ≈2s & start "" /wait "装包.exe" /S --updated & start "" "本 exe"
- *     · /S        —— NSIS 静默安装，全程不弹任何界面
- *     · 装回原路径 —— 安装器 initMultiUser 在 .onInit 里读注册表
- *                     HKCU\Software\<APP_GUID>\InstallLocation（上次装的目录）并据此
- *                     设置 $INSTDIR；静默模式没有"选择安装目录"页，所以自动装回原位置。
+ *   NSIS（带界面安装，v0.5.20 起）：
+ *     ping ≈2s & start "" /wait "装包.exe" --updated
+ *     · 不带 /S   —— v0.5.17~v0.5.19 是静默升级（/S），问题是静默装一旦失败
+ *                     用户完全无感：app 已经退出、没有界面、也没有任何报错，
+ *                     看起来就是"点了按钮，程序关了又开，版本没变"。
+ *                     改成正常弹安装向导（build.nsis 本来就是 oneClick: false
+ *                     的向导式安装器），用户自己点"下一步 → 安装 → 完成"，
+ *                     装没装上一眼可见，被杀软/权限拦下也当场能看到。
+ *     · --updated —— 声明这是升级：安装器 .onInit 读注册表
+ *                     HKCU\Software\<APP_GUID>\InstallLocation（上次的安装目录）
+ *                     设置 $INSTDIR，装回原位置；_CHECK_APP_RUNNING 也不会再弹
+ *                     "应用正在运行"的框（走 Sleep + 强杀残留进程分支）。
  *                     不用传 /D= —— 而且 cmd 自带 `start /D <dir>` 开关，传了有被吞掉的风险
- *     · --updated —— 声明这是升级：安装器的 _CHECK_APP_RUNNING 会走
- *                     "Sleep + 强杀残留进程"分支而不是弹 MessageBox，
- *                     否则静默升级会被"应用正在运行"弹窗卡住
- *     · /wait     —— cmd 等装包真正装完，再由我们 start 新版本（同一路径，文件已替换完）。
- *                     不用 --force-run：它走安装器内部的 StartApp（依赖 $launchLink），
- *                     失败时不会有任何反馈，不如自己拉起可控
+ *     · 装完启动 —— 交给安装器自己做：assistedInstaller.nsh 的完成页有
+ *                     MUI_FINISHPAGE_RUN（"运行 一寸光阴"默认勾选），点"完成"
+ *                     后 StartApp 用 StdUtils.ExecShellAsUser 以当前登录用户身份
+ *                     拉起 $launchLink（提升过的安装器也不会把 app 带成管理员）。
+ *                     ★ 我们自己不再 start 一遍：应用没有单实例锁，两边都拉
+ *                       会开出两个窗口。
+ *     · /wait     —— 只为等安装器结束、把退出码写进 restart.log
+ *                     （0=装完，1602/1223=用户取消/拒绝 UAC），便于售后排查
  *
  *   portable：直接 start 下载好的新版 portable exe（绿色版不覆盖旧文件，
  *             用户自行替换即可）
@@ -360,9 +368,24 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  *     `ping ... > nul & start ...` 一次性 cmd /c 跑，但 windowsVerbatimArguments
  *     + Node 自动给 script 加首尾引号 → cmd 把 > 字面化（不当重定向），ping
  *     回显就漏到控制台（用户看到黑框）。临时 .bat 不会被外层引号吞重定向。
- *   （.bat 文件名用全 ASCII、内容纯 ASCII，绕开"cmd 读 .bat 按 ANSI/GBK 解析
- *    路径含中文用户名会乱码"那个老坑——参数 %~1 %~2 是 UTF-16 字节，cmd 内部
- *    不二次编码直接拼给 start，中文路径安全。）
+ *
+ * ★ v0.5.20：.bat 里的路径改走环境变量 TW_SETUP / TW_SELF，argv 只留 batPath 本身。
+ *   旧写法 `spawn('cmd.exe', ['/c', batPath, ...batArgs])` 把 batPath 传了两次，
+ *   于是 bat 的 %1 拿到的是 .bat 自己而不是装包路径，nsis 分支变成
+ *     `start "" /wait "<同一个 .bat>" /S --updated` → 递归拉起自己：
+ *       · start 的目标是 .bat 时走的是 `%COMSPEC% /K "<file>"`（实测确认），
+ *         /K 的窗口**跑完也不退出** → 用户看到黑框 + ping 127.0.0.1 回显 + 常在的
+ *         命令提示符，每试一次留一个不退出的 cmd
+ *       · 第二层 bat 的 %1 变成 `/S` → `start "" "/S" ...` → 弹
+ *         "Windows 找不到文件 '/S'"（或"系统找不到指定的路径"），
+ *         资源被常驻 cmd 堆光后就是"内存资源不足，无法处理此命令"，
+ *         而真正的安装器从来没被拉起来 → 更新装不上
+ *   即便修掉重复，用 argv 传路径仍有两个坑：cmd /c 的引号剥离规则（引号数量
+ *   不等于 2 时会砍掉首尾引号，含空格的路径就被空格截断）、以及 Node 在
+ *   verbatim 模式下不会自动补引号。改走环境变量后：.bat 内容保持纯 ASCII
+ *   （中文路径不再经过 .bat 编码），命令行走 `cmd /c "<batPath>"`（引号恰好 2 个，
+ *   cmd 保留引号且不拆词），%TEMP% / 安装目录带空格或中文都不影响解析；
+ *   而 bat 里已经不存在"自己"这个路径，自引用从结构上不可能再发生。
  *
  * 返回 { ok } 表示"已经安排好了"，渲染端据此显示"正在重启…"；
  * 真正的安装/重启在进程退出后由 cmd 完成。
@@ -372,9 +395,16 @@ export function restartAndInstall(
   mode: UpdateMode,
 ): { ok: boolean; error?: string } {
   try {
-    // v0.5.12: 加一行注释占位，触发 patch 发版，方便重测 v0.5.11 的 NSIS 静默升级修法
+    // v0.5.12: 加一行注释占位，触发 patch 发版，方便重测 v0.5.11 的 NSIS 升级修法
     if (!localPath || !fs.existsSync(localPath)) {
       return { ok: false, error: '安装包不存在（可能已被清理），请重新下载' }
+    }
+    // 只接受 .exe（下载下来的 asset 一定是 TimeWell-x.y.z[-portable]-x64.exe）：
+    // `start "" /wait "<target>"` 的目标不是 exe 时，cmd 会走 `%COMSPEC% /K "<file>"`
+    // 起一个跑完也不退出的控制台，外层 /wait 永远等不到它结束 —— 装完不重启、
+    // 还留个黑框。这里兜一道，宁可直接报错让用户手动打开装包。
+    if (!localPath.toLowerCase().endsWith('.exe')) {
+      return { ok: false, error: '安装包格式不支持（只认 .exe），请重新下载' }
     }
 
     if (process.platform !== 'win32') {
@@ -392,36 +422,56 @@ export function restartAndInstall(
     // —— 截图里那个黑框就是 ping 在打 "来自 127.0.0.1 的回复"。
     //
     // 修法：写一个临时 .bat 文件，cmd 直接解析 .bat 里的命令（.bat 不会被
-    //       spawn 的首尾引号吞重定向）。.bat 路径放在 %TEMP% 全 ASCII 路径
-    //       下，绕开"路径含中文 + ANSI 解析乱码"那个老坑（v0.5.9 注释记过）。
+    //       spawn 的首尾引号吞重定向）。.bat 内容保持纯 ASCII。
     const batDir = path.join(os.tmpdir(), 'TimeWell-update')
     fs.mkdirSync(batDir, { recursive: true })
     const batPath = path.join(batDir, mode === 'nsis' ? 'upgrade-nsis.bat' : 'upgrade-portable.bat')
 
-    // NSIS 升级：sleep 等当前进程退干净 → 静默装包（/S + --updated）→ 装完拉起新版本
+    // NSIS 升级：sleep 等当前进程退干净 → 弹安装向导（--updated，不带 /S）
+    //           → 用户点"完成"，由安装器的完成页勾选项拉起新版本
     // portable 升级：sleep → 直接 start 下载好的新版绿色版（不替换旧文件，用户自行覆盖）
+    //
+    // 装包路径走环境变量 TW_SETUP 而不是 argv：
+    //   argv 传路径会踩 cmd /c 的引号剥离规则（%1 错位 / 含空格路径被截断），
+    //   环境变量由 CreateProcessW 按 UTF-16 传递，中文 + 空格都安全。
+    //   关键是：bat 里不再出现"自己"这个路径，从结构上杜绝"把 .bat 当装包 start 一遍"
+    //   的自引用（旧 bug → 无限弹 cmd 窗口 / 递归 / 内存资源不足 / 找不到 /S）。
+    // `%~dp0restart.log` 与主进程 writeRestartLog 写同一个文件：装包是在本进程退出后
+    //   才跑的，那之后没有任何 UI 能报错，发货后排查只能靠这份日志。
+    //   日志行刻意不写 %date% —— 中文 Windows 下 %date% 是"周五"这种本地化字符，
+    //   cmd 用 OEM 码页写文件，混进 UTF-8 日志里就是乱码；时间戳由主进程那几行
+    //   （ISO 格式）负责，bat 只追加纯 ASCII 的事件 + 装包退出码。
+    const batCommon = '@echo off\r\nping 127.0.0.1 -n 3 > nul\r\n'
     const batBody = mode === 'nsis'
-      ? `@echo off\r\nping 127.0.0.1 -n 3 > nul\r\nstart "" /wait "%~1" /S --updated\r\nstart "" "%~2"\r\n`
-      : `@echo off\r\nping 127.0.0.1 -n 3 > nul\r\nstart "" "%~1"\r\n`
+      ? batCommon
+        + 'echo bat(nsis) start >> "%~dp0restart.log"\r\n'
+        + 'if not exist "%TW_SETUP%" echo ERROR setup missing >> "%~dp0restart.log"\r\n'
+        + 'start "" /wait "%TW_SETUP%" --updated\r\n'
+        + 'echo installer exit=%ERRORLEVEL% >> "%~dp0restart.log"\r\n'
+      : batCommon
+        + 'echo bat(portable) start >> "%~dp0restart.log"\r\n'
+        + 'if not exist "%TW_SETUP%" echo ERROR setup missing >> "%~dp0restart.log"\r\n'
+        + 'start "" "%TW_SETUP%"\r\n'
 
-    // 写 .bat：必须用 UTF-8 编码（虽然内容是纯 ASCII，但保持好习惯）
+    // 写 .bat：内容纯 ASCII，编码用 UTF-8 即可（不含中文，不依赖 .bat 编码）
     fs.writeFileSync(batPath, batBody, { encoding: 'utf8' })
-    console.log(`[updater] 重启并安装（${mode}）: bat=${batPath}, exe=${localPath}, self=${process.execPath}`)
-    writeRestartLog(`[${new Date().toISOString()}] restart(${mode})\n  bat=${batPath}\n  exe=${localPath}\n  self=${process.execPath}\n`)
+    console.log(`[updater] 重启并安装（${mode}）: bat=${batPath}, setup=${localPath}, self=${process.execPath}`)
+    writeRestartLog(`[${new Date().toISOString()}] restart(${mode})\n  bat=${batPath}\n  setup=${localPath}\n  self=${process.execPath}\n`)
 
-    // spawn .bat：%1=localPath, %2=process.execPath（仅 nsis 用到）
-    // ★ 关键 windowsVerbatimArguments: true（v0.5.9 修的坑）：
-    //   路径含中文用户名时（process.execPath 经常是 C:\Users\<中文名>\...），
-    //   Node 默认会按系统 ANSI 重新编码 argv，cmd 拿到的是乱码路径。
-    //   原样透传 UTF-16 让 cmd 直接读正确字符。
-    const batArgs = mode === 'nsis'
-      ? [batPath, localPath, process.execPath]
-      : [batPath, localPath]
-    spawn('cmd.exe', ['/c', batPath, ...batArgs], {
+    // spawn .bat：argv 只传 batPath 本身，**手动加引号**（含空格路径不被拆词）。
+    // ★ 关键 windowsVerbatimArguments: true：
+    //   Node 默认会把参数里的 " 转义成 \" 并在外层再包一层引号，cmd.exe 不认反斜杠
+    //   转义（v0.5.8 那个"文件名、目录名或卷标语法不正确"就是它）；
+    //   verbatim 下 Node 原样透传，我们给什么 cmd 就收什么。
+    //   只传一个带引号的路径时引号恰好 2 个，走 cmd 的"引号保留"规则，解析稳定。
+    spawn('cmd.exe', ['/c', `"${batPath}"`], {
       detached: true,
       stdio: 'ignore',
       windowsHide: true,
       windowsVerbatimArguments: true,
+      // 只传装包路径；装完由安装器自己拉起新版本（见文件头 NSIS 说明），
+      // 所以 bat 里没有、也不需要"当前 exe"这个概念
+      env: { ...process.env, TW_SETUP: localPath },
     }).unref()
 
     // 给渲染端留一点时间收到 { ok } 并显示"正在重启…"，然后退出
