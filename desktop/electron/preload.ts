@@ -52,6 +52,9 @@ contextBridge.exposeInMainWorld('updater', {
     ipcRenderer.invoke('update:startManualDownload', info, mode),
   /** manual 模式：下载完成 → 用户点"打开安装包" */
   openLocalFile: (p: string) => ipcRenderer.invoke('update:openLocalFile', p),
+  /** 下载完成 → 用户点"重启并安装"：主进程退出 + 拉起装包，装完自动开新版本 */
+  restartAndInstall: (p: string, mode: 'nsis' | 'portable') =>
+    ipcRenderer.invoke('update:restartAndInstall', p, mode),
   /** 兜底：浏览器打开 GitHub Release 页面 */
   openExternal: (url: string) => ipcRenderer.invoke('shell:openExternal', url),
   /** 当前应用版本（package.json 读，dev 也准） */

@@ -3,7 +3,7 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
-import { checkForUpdates, checkForUpdatesManual, startManualDownload } from './updater'
+import { checkForUpdates, checkForUpdatesManual, startManualDownload, restartAndInstall } from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -92,6 +92,10 @@ app.whenReady().then(() => {
     if (typeof p === 'string' && p && fsSync.existsSync(p)) {
       await shell.openPath(p)
     }
+  })
+  // 用户点"重启并安装"→ 退出应用 + 拉起装包（装完自动开新版本）
+  ipcMain.handle('update:restartAndInstall', (_e, p: string, mode: 'nsis' | 'portable') => {
+    return restartAndInstall(p, mode === 'nsis' ? 'nsis' : 'portable')
   })
   // 渲染端展示当前版本号（侧栏底部），统一读 package.json 不读 app.getVersion
   // 因为 dev 模式 app.getVersion() 会返 Electron 版本（参见 readAppVersion 注释）

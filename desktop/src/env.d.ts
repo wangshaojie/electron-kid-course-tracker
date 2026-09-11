@@ -6,34 +6,35 @@ declare module '*.vue' {
   export default component
 }
 
-interface UpdateInfoPayload {
-  version: string
-  currentVersion: string
-  tag: string
-  url: string
-  mode?: 'nsis' | 'portable'
-  localPath?: string
-  size?: number
-}
-interface UpdateProgressPayload {
-  percent: number
-  bytesPerSecond?: number
-  transferred: number
-  total: number
-}
-interface UpdateDownloadedPayload {
-  version: string
-  localPath?: string
-  size?: number
-}
-interface UpdateErrorPayload {
-  message: string
-  fallback?: 'openExternal'
-  url?: string
-}
-
 // 主进程通过 preload 暴露的本地 fs API
 declare global {
+  // ---- 版本更新 IPC 载荷（全局声明，App.vue / stores/update.ts 直接用）----
+  interface UpdateInfoPayload {
+    version: string
+    currentVersion: string
+    tag: string
+    url: string
+    mode?: 'nsis' | 'portable'
+    localPath?: string
+    size?: number
+  }
+  interface UpdateProgressPayload {
+    percent: number
+    bytesPerSecond?: number
+    transferred: number
+    total: number
+  }
+  interface UpdateDownloadedPayload {
+    version: string
+    localPath?: string
+    size?: number
+  }
+  interface UpdateErrorPayload {
+    message: string
+    fallback?: 'openExternal'
+    url?: string
+  }
+
   interface Window {
     kidfs: {
       userDataDir(): Promise<string>
@@ -55,6 +56,7 @@ declare global {
       onUpdateError(cb: (e: UpdateErrorPayload) => void): () => void
       startManualDownload(info: UpdateInfoPayload, mode: 'portable' | 'fallback'): Promise<void>
       openLocalFile(p: string): Promise<void>
+      restartAndInstall(p: string, mode: 'nsis' | 'portable'): Promise<{ ok: boolean; error?: string }>
       openExternal(url: string): Promise<void>
       getAppVersion(): Promise<string>
       manualCheck(): Promise<'has-update' | 'up-to-date' | 'failed'>

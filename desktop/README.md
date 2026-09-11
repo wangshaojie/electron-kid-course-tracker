@@ -38,7 +38,7 @@
 | 📈 **统计分析** | ECharts 饼图 + 柱图 + 时间段筛选（图表自动跟随主题） |
 | ⚙️ **数据管理** | Excel 导出（每门课一个 sheet）/ 认领旧账号数据 |
 | 🎨 **主题切换** | 深色 / 浅色 / 跟随系统；localStorage 兜底，云端同步 best-effort |
-| 🔄 **自动更新** | 启动时检查 GitHub Release，有新版本弹窗提示 |
+| 🔄 **自动更新** | 启动时检查 GitHub Release → 新版本弹框 → 下载进度弹框 → 一键「重启并安装」 |
 | 🎨 **设计风格** | 薄荷绿 + 米色卡片风（浅）/ 暗色玻璃卡（深），ECharts 配色跟随 |
 
 ---
@@ -183,7 +183,7 @@ $env:OPEN_DEVTOOLS='1'; pnpm exec electron dist-electron/main.mjs
 desktop/
 ├── electron/              # 主进程 + preload
 │   ├── main.ts            # 窗口 / DevTools 策略 / IPC / boot.log
-│   ├── updater.ts         # 版本检查（GitHub 双通道）
+│   ├── updater.ts         # 版本检查（GitHub 双通道）+ 下载进度 + 重启并安装
 │   └── preload.ts
 ├── src/
 │   ├── main.ts            # 入口：theme 早期应用 + auth bootstrap → router.isReady → mount

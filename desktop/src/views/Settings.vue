@@ -234,12 +234,48 @@ async function onCheckUpdate() {
           </button>
         </div>
 
-        <!-- 有新版本提示条 -->
+        <!-- 更新状态条：可更新 / 下载中 / 已下载待安装 -->
+        <div v-if="updateStore.phase === 'downloaded'" class="settings-update-banner">
+          <span>新版本 <b>v{{ updateStore.targetVersion }}</b> 已下载完成</span>
+          <span class="settings-update-actions">
+            <button type="button" class="settings-update-btn" @click="updateStore.dialogVisible = true">
+              查看
+            </button>
+            <button
+              type="button"
+              class="settings-update-btn settings-update-btn-primary"
+              :disabled="updateStore.restarting"
+              @click="updateStore.restartAndInstall()"
+            >
+              {{ updateStore.restarting ? '正在重启…' : '立即重启安装' }}
+            </button>
+          </span>
+        </div>
+        <div v-else-if="updateStore.busy" class="settings-update-banner">
+          <span>
+            正在下载新版本 <b>v{{ updateStore.targetVersion }}</b>
+            · {{ updateStore.progress.percent.toFixed(0) }}%
+          </span>
+          <span class="settings-update-actions">
+            <button type="button" class="settings-update-btn" @click="updateStore.dialogVisible = true">
+              查看进度
+            </button>
+          </span>
+        </div>
         <div
-          v-if="updateStore.hasUpdate && updateStore.latestVersion"
+          v-else-if="updateStore.hasUpdate && updateStore.latestVersion"
           class="settings-update-banner"
         >
-          🎉 发现新版本 <b>v{{ updateStore.latestVersion }}</b>，点击右上角「检测更新」旁的系统弹窗立即升级
+          <span>发现新版本 <b>v{{ updateStore.latestVersion }}</b></span>
+          <span class="settings-update-actions">
+            <button
+              type="button"
+              class="settings-update-btn settings-update-btn-primary"
+              @click="updateStore.updateNow()"
+            >
+              立即更新
+            </button>
+          </span>
         </div>
 
         <dl class="grid grid-cols-[auto_1fr] gap-x-4 gap-y-2 text-sm text-dark-body">
@@ -413,8 +449,12 @@ async function onCheckUpdate() {
   to { transform: rotate(360deg); }
 }
 
-/* ---- 关于卡 · 新版本横幅 ---- */
+/* ---- 关于卡 · 新版本横幅（可更新 / 下载中 / 待安装） ---- */
 .settings-update-banner {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
   margin-bottom: 12px;
   padding: 10px 12px;
   border-radius: 8px;
@@ -422,6 +462,39 @@ async function onCheckUpdate() {
   background: var(--brand-soft-bg);
   border: 1px solid var(--brand-soft-border);
   color: var(--brand-text);
+}
+.settings-update-actions {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.settings-update-btn {
+  padding: 4px 10px;
+  border-radius: 6px;
+  font-size: 12px;
+  cursor: pointer;
+  background: transparent;
+  border: 1px solid var(--brand-soft-border);
+  color: var(--brand-text);
+  transition: background 0.2s ease, border-color 0.2s ease;
+}
+.settings-update-btn:hover {
+  background: var(--brand-soft-bg-2);
+}
+.settings-update-btn:disabled {
+  opacity: 0.6;
+  cursor: default;
+}
+.settings-update-btn-primary {
+  background: var(--brand-1);
+  border-color: var(--brand-1);
+  color: var(--text-on-primary);
+  font-weight: 600;
+}
+.settings-update-btn-primary:hover {
+  background: var(--brand-2);
+  border-color: var(--brand-2);
 }
 
 /* ---- 关于卡 · 版本号 / 新版本标识 ---- */

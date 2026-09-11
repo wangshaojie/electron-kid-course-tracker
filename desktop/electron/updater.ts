@@ -1,8 +1,9 @@
 /**
  * 版本更新 —— 统一策略：
  *   不管是 NSIS 安装版还是 portable 绿色版，主进程都用 https + fs 直接把
- *   .exe 装包下载到 %TEMP%\TimeWell-update\，下载完成后推 localPath 给
- *   渲染端，渲染端弹"立即打开安装包"按钮。
+ *   .exe 装包下载到 %TEMP%\TimeWell-update\，下载过程中把进度推给渲染端
+ *   （渲染端弹"下载进度弹框"），下载完成后推 localPath 给渲染端。
+ *   渲染端点"重启并安装" → 主进程退出 + 拉起安装包（见 restartAndInstall）。
  *   失败时回退到"前往 GitHub Release 页面"。
  *
  * 历史：v0.4.4 之前 NSIS 走 electron-updater 自动静默安装，但 asar 打包后
@@ -17,6 +18,7 @@ import https from 'node:https'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import { spawn } from 'node:child_process'
 
 const REPO = 'wangshaojie/electron-kid-course-tracker'
 const RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`
@@ -274,6 +276,57 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
     const msg = err instanceof Error ? err.message : String(err)
     console.log(`[updater:manual] 下载失败: ${msg}`)
     emit('update:error', { message: msg, fallback: 'openExternal', url: info.url })
+  }
+}
+
+/* ========== 重启并安装 ========== */
+
+/**
+ * 一键"重启并安装"（渲染端下载完成后的主按钮）。
+ *
+ * 为什么不能直接 `shell.openPath(装包)` 然后继续运行：
+ *   Windows 上正在运行的 .exe 被系统锁定，NSIS 覆盖安装必然失败，而且
+ *   NSIS 会检测到"应用还在运行"再弹一次让用户关掉的提示。
+ * 所以顺序必须是：当前进程先退出 → 再跑装包。
+ *
+ * 实现：把整条链路交给一个 detached 的 cmd.exe（用 ping 当 sleep，等当前
+ * 进程退干净），主进程随后 app.quit()：
+ *   NSIS    ：静默安装（/S）→ 装完 start 应用（安装目录不变，所以复用 execPath）
+ *   portable：直接 start 下载好的新版 portable exe（绿色版不覆盖旧文件，
+ *             用户自行替换即可）
+ *
+ * 返回 { ok } 表示"已经安排好了"，渲染端据此显示"正在重启…"；
+ * 真正的安装/重启在进程退出后由 cmd 完成。
+ */
+export function restartAndInstall(
+  localPath: string,
+  mode: UpdateMode,
+): { ok: boolean; error?: string } {
+  try {
+    if (!localPath || !fs.existsSync(localPath)) {
+      return { ok: false, error: '安装包不存在（可能已被清理），请重新下载' }
+    }
+
+    if (process.platform !== 'win32') {
+      // 非 Windows（理论上不会走到）只做"打开装包"
+      spawn(localPath, [], { detached: true, stdio: 'ignore' }).unref()
+      setTimeout(() => app.quit(), 300)
+      return { ok: true }
+    }
+
+    // ping -n 3 ≈ 2s，等当前进程完全退出再动安装包
+    const sleep = 'ping 127.0.0.1 -n 3 > nul'
+    const script = mode === 'nsis'
+      ? `${sleep} & start "" /wait "${localPath}" /S & start "" "${process.execPath}"`
+      : `${sleep} & start "" "${localPath}"`
+    console.log(`[updater] 重启并安装（${mode}）: ${script}`)
+    spawn('cmd.exe', ['/c', script], { detached: true, stdio: 'ignore', windowsHide: true }).unref()
+
+    // 给渲染端留一点时间收到 { ok } 并显示"正在重启…"，然后退出
+    setTimeout(() => app.quit(), 320)
+    return { ok: true }
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : String(e) }
   }
 }
 
