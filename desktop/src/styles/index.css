@@ -518,54 +518,20 @@
   pointer-events: none;
 }
 
-.progress-fill::after {
-  content: '';
-  position: absolute;
-  top: 0; left: -40%;
-  width: 40%;
-  height: 100%;
-  background: linear-gradient(
-    100deg,
-    transparent 0%,
-    var(--progress-highlight) 50%,
-    transparent 100%
-  );
-  animation: progress-shine 2.4s ease-in-out infinite;
-  pointer-events: none;
-}
-
-@keyframes progress-shine {
-  0%   { left: -40%; }
-  60%  { left: 100%; }
-  100% { left: 100%; }
-}
-
-/* 暖橙（低课时警告） */
+/* 暖橙（低课时警告）— 静态，不再呼吸 */
 .progress-fill.tone-sun {
   background: linear-gradient(90deg, var(--sun-1) 0%, var(--sun-2) 100%);
   box-shadow:
     0 0 8px var(--sun-glow),
     inset 0 1px 0 var(--progress-highlight);
-  animation: progress-pulse-sun 1.6s ease-in-out infinite;
 }
 
-/* 红色（已过期） */
+/* 红色（已过期）— 静态，不再呼吸 */
 .progress-fill.tone-danger {
   background: linear-gradient(90deg, var(--danger-1) 0%, var(--danger-2) 100%);
   box-shadow:
-    0 0 8px var(--danger-soft-bg-2),
+    0 0 10px var(--danger-soft-bg-2),
     inset 0 1px 0 var(--progress-highlight);
-  animation: progress-pulse-danger 1.2s ease-in-out infinite;
-}
-
-@keyframes progress-pulse-sun {
-  0%, 100% { box-shadow: 0 0 8px var(--sun-glow), inset 0 1px 0 var(--progress-highlight); }
-  50%      { box-shadow: 0 0 16px var(--sun-glow), inset 0 1px 0 var(--progress-highlight); }
-}
-
-@keyframes progress-pulse-danger {
-  0%, 100% { box-shadow: 0 0 8px var(--danger-soft-bg-2), inset 0 1px 0 var(--progress-highlight); }
-  50%      { box-shadow: 0 0 18px var(--danger-soft-bg-2), inset 0 1px 0 var(--progress-highlight); }
 }
 
 /* 数字渐变 */
