@@ -35,8 +35,8 @@ const speedText = computed(() =>
 /** 下载完成后的说明（路径可能很长，单独一行省略显示） */
 const downloadedHint = computed(() =>
   update.restarting
-    ? '正在退出并安装，稍后会自动打开新版本…'
-    : '点击「立即重启并安装」后应用会自动退出并完成安装，安装完成后自动打开新版本。',
+    ? '正在静默安装（装回原目录），稍后会自动打开新版本…'
+    : '点击「立即重启并安装」后应用自动退出，在后台静默装回原目录，装完自动打开新版本，全程无需操作。',
 )
 
 function formatBytes(n: number): string {

@@ -290,9 +290,23 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  * 所以顺序必须是：当前进程先退出 → 再跑装包。
  *
  * 实现：把整条链路交给一个 detached 的 cmd.exe（用 ping 当 sleep，等当前
- * 进程退干净），主进程随后 app.quit()：
- *   NSIS    ：start 装包（不带 /S）→ 安装器显示界面，装完它自己拉起新版本
- *   portable：start 下载好的新版 portable exe（绿色版不覆盖旧文件，
+ * 进程退干净），主进程随后 app.quit()。两种形态：
+ *
+ *   NSIS（静默升级，v0.5.9+）：
+ *     ping ≈2s & start "" /wait "装包.exe" /S --updated & start "" "本 exe"
+ *     · /S        —— NSIS 静默安装，全程不弹任何界面
+ *     · 装回原路径 —— 安装器 initMultiUser 在 .onInit 里读注册表
+ *                     HKCU\Software\<APP_GUID>\InstallLocation（上次装的目录）并据此
+ *                     设置 $INSTDIR；静默模式没有"选择安装目录"页，所以自动装回原位置。
+ *                     不用传 /D= —— 而且 cmd 自带 `start /D <dir>` 开关，传了有被吞掉的风险
+ *     · --updated —— 声明这是升级：安装器的 _CHECK_APP_RUNNING 会走
+ *                     "Sleep + 强杀残留进程"分支而不是弹 MessageBox，
+ *                     否则静默升级会被"应用正在运行"弹窗卡住
+ *     · /wait     —— cmd 等装包真正装完，再由我们 start 新版本（同一路径，文件已替换完）。
+ *                     不用 --force-run：它走安装器内部的 StartApp（依赖 $launchLink），
+ *                     失败时不会有任何反馈，不如自己拉起可控
+ *
+ *   portable：直接 start 下载好的新版 portable exe（绿色版不覆盖旧文件，
  *             用户自行替换即可）
  *
  * ★ 必须带 windowsVerbatimArguments: true（v0.5.9 修的坑）：
@@ -327,12 +341,14 @@ export function restartAndInstall(
     // ping -n 3 ≈ 2s，等当前进程完全退出再动安装包
     // （不用 timeout 命令：它要求 stdin 是控制台，stdio: ignore 下会直接报错）
     const sleep = 'ping 127.0.0.1 -n 3 > nul'
-    // 不带 /S：让 NSIS 显示安装界面（对齐 home-ledger quitAndInstall(false, false)）
-    // 不带 /wait：cmd 不阻塞，装完由安装器自己 ExecShell 拉起新版本
-    // nsis 与 portable 的命令完全一致，差别只在"起来的是装包还是绿色版 exe"
-    const script = `${sleep} & start "" "${localPath}"`
+    // NSIS：/S 静默安装 + --updated（升级模式，不弹"应用正在运行"）+ /wait 装完再拉起新版本
+    //       "/D=" 不需要传，安装器自己从注册表读上次的安装目录
+    // portable：直接 start 新版绿色版 exe
+    const script = mode === 'nsis'
+      ? `${sleep} & start "" /wait "${localPath}" /S --updated & start "" "${process.execPath}"`
+      : `${sleep} & start "" "${localPath}"`
     console.log(`[updater] 重启并安装（${mode}）: ${script}`)
-    writeRestartLog(`[${new Date().toISOString()}] restart(${mode}) → ${localPath}\n`)
+    writeRestartLog(`[${new Date().toISOString()}] restart(${mode})\n  ${script}\n`)
 
     spawn('cmd.exe', ['/c', script], {
       detached: true,
