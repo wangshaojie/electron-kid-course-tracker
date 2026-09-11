@@ -326,6 +326,7 @@ export function restartAndInstall(
   mode: UpdateMode,
 ): { ok: boolean; error?: string } {
   try {
+    // v0.5.12: 加一行注释占位，触发 patch 发版，方便重测 v0.5.11 的 NSIS 静默升级修法
     if (!localPath || !fs.existsSync(localPath)) {
       return { ok: false, error: '安装包不存在（可能已被清理），请重新下载' }
     }
