@@ -48,6 +48,11 @@ async function bootstrap() {
   mark('pinia')
   app.use(router)
   mark('router')
+  // 日期组件 / 分页 / 弹窗等内置文案 → 改为中文
+  // 按需引入场景下 element-plus 的 i18n 用 <el-config-provider :locale="zhCn"> 包裹根组件
+  // 全局配置不依赖 globalProperties.$ELEMENT 兜底（按需引入下 fallback 不稳）
+  // 文档：https://element-plus.org/zh-CN/guide/i18n.html#configprovider
+  mark('element-plus locale (via ElConfigProvider in App.vue)')
 
   // 1) 鉴权初始化：尝试从 SDK 持久化的 session 恢复登录态
   const auth = useAuthStore()

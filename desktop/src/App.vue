@@ -20,6 +20,9 @@ import { useCheckinsStore } from '@/stores/checkins'
 import { useThemeStore } from '@/stores/theme'
 import { useUpdateStore } from '@/stores/update'
 import { refreshClientMeta } from '@/lib/cloudbase'
+// Element Plus 组件按需引入（unplugin-vue-components），
+// 但 ElConfigProvider 是个组件壳，locale 是普通对象，必须手动 import
+import zhCn from 'element-plus/es/locale/lang/zh-cn'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -131,29 +134,36 @@ watch(
 </script>
 
 <template>
-  <router-view v-if="isLoginPage" />
+  <!--
+    按需引入 Element Plus 场景下，全局 i18n 必须由 <el-config-provider> 显式注入
+    不然 el-date-picker 弹出面板的月份 / 星期 / 确认按钮等会回退到英文
+    文档：https://element-plus.org/zh-CN/guide/i18n.html#configprovider
+  -->
+  <el-config-provider :locale="zhCn">
+    <router-view v-if="isLoginPage" />
 
-  <AppLayout v-else-if="auth.isAuthenticated">
-    <!-- 登录后同步业务数据：loading 只占内容区，侧栏立即可见（不再全屏盖白） -->
-    <div v-if="initializing" class="content-splash">
-      <div class="glass-card content-loading-card">
-        <div class="loading-orb">🌱</div>
-        <p class="loading-title">正在同步你的数据…</p>
-        <p class="loading-sub">宝贝档案 · 课程 · 打卡记录</p>
+    <AppLayout v-else-if="auth.isAuthenticated">
+      <!-- 登录后同步业务数据：loading 只占内容区，侧栏立即可见（不再全屏盖白） -->
+      <div v-if="initializing" class="content-splash">
+        <div class="glass-card content-loading-card">
+          <div class="loading-orb">🌱</div>
+          <p class="loading-title">正在同步你的数据…</p>
+          <p class="loading-sub">宝贝档案 · 课程 · 打卡记录</p>
+        </div>
       </div>
-    </div>
 
-    <router-view v-else v-slot="{ Component, route }">
-      <transition name="route" mode="out-in" appear>
-        <component :is="Component" :key="route.fullPath" />
-      </transition>
-    </router-view>
-  </AppLayout>
+      <router-view v-else v-slot="{ Component, route }">
+        <transition name="route" mode="out-in" appear>
+          <component :is="Component" :key="route.fullPath" />
+        </transition>
+      </router-view>
+    </AppLayout>
 
-  <div v-else class="boot-splash" />
+    <div v-else class="boot-splash" />
 
-  <!-- 版本更新下载弹框（登录页也可见：更新不属于业务数据） -->
-  <UpdateDialog />
+    <!-- 版本更新下载弹框（登录页也可见：更新不属于业务数据） -->
+    <UpdateDialog />
+  </el-config-provider>
 </template>
 
 <style scoped>

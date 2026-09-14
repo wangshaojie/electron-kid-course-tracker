@@ -32,43 +32,43 @@ const iconBg: Record<NonNullable<Props['tone']>, string> = {
 </script>
 
 <template>
-  <div class="glass-card stat-card h-full p-4">
+  <div class="glass-card stat-card h-full p-3">
     <div
       v-if="icon"
-      class="stat-icon flex h-12 w-12 items-center justify-center rounded-xl text-2xl"
+      class="stat-icon flex h-9 w-9 items-center justify-center rounded-lg text-lg"
       :style="{ background: iconBg[tone] }"
     >
       {{ icon }}
     </div>
     <div class="stat-body">
-      <p class="stat-label text-xs" style="color: var(--text-soft); letter-spacing: 0.04em;">{{ label }}</p>
+      <p class="stat-label text-[11px]" style="color: var(--text-soft); letter-spacing: 0.04em;">{{ label }}</p>
       <p
-        class="glass-num text-[28px] leading-tight tracking-tight num-fade"
+        class="glass-num text-[22px] leading-tight tracking-tight num-fade"
         :class="{
           'tone-sun': tone === 'sun',
           'tone-danger': tone === 'danger',
         }"
       >
-        {{ value }}<span v-if="unit" class="ml-1.5 text-sm font-normal" style="color: var(--text-soft); -webkit-text-fill-color: var(--text-soft); background: none;">{{ unit }}</span>
+        {{ value }}<span v-if="unit" class="ml-1 text-xs font-normal" style="color: var(--text-soft); -webkit-text-fill-color: var(--text-soft); background: none;">{{ unit }}</span>
       </p>
-      <p v-if="hint" class="mt-1 text-xs" style="color: var(--text-soft);">{{ hint }}</p>
-      <!-- 没有 hint 时用占位元素撑高,保证 4 张卡高度一致 -->
-      <p v-else class="mt-1 text-xs invisible" aria-hidden="true">·</p>
+      <p v-if="hint" class="mt-0.5 text-[11px] leading-snug" style="color: var(--text-soft);">{{ hint }}</p>
+      <!-- 没有 hint 时用占位元素撑高,保证 5 张卡高度一致 -->
+      <p v-else class="mt-0.5 text-[11px] invisible" aria-hidden="true">·</p>
     </div>
   </div>
 </template>
 
 <style scoped>
 .stat-card {
-  /* 高度自适应内容即可,无需 stretch —— grid 父级已 stretch 到最高 item */
-  min-height: 88px;
+  /* 紧凑模式:卡片本身已 min-height 88,密集排 5 张时不至于上下被拉松 */
+  min-height: 80px;
 }
 /* grid 布局:左 icon(固定) + 右 body(占满 + 垂直居中) */
 .stat-card {
   display: grid;
   grid-template-columns: auto minmax(0, 1fr);
   align-items: center;
-  gap: 16px;
+  gap: 12px;
 }
 .stat-body {
   /* flex-col + justify-center 让内容真正垂直居中(高度由 grid 撑满) */

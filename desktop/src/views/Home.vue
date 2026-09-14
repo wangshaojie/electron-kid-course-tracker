@@ -9,7 +9,6 @@ import { useChildrenStore } from '@/stores/children'
 import { useAuthStore } from '@/stores/auth'
 import type { CourseSummary } from '@/types'
 import { formatMoney } from '@/utils/money'
-import { todayStr } from '@/utils/date'
 import StatCard from '@/components/common/StatCard.vue'
 import CheckinFormDialog from '@/components/checkin/CheckinFormDialog.vue'
 import { useRouter } from 'vue-router'
@@ -23,10 +22,23 @@ const router = useRouter()
 const checkinDialogOpen = ref(false)
 const preselectedId = ref<string | null>(null)
 
-const todayCheckinCount = computed(() => {
-  const today = todayStr()
-  return checkins.items.filter((c) => c.date === today).length
+/**
+ * 本年度范围：以系统当前年份做前缀匹配。
+ * checkins.items 是当前 active child 的全量打卡（不限定时间），客户端按 date 前缀过滤
+ * 用 computed 包一层,系统时间跨年（用户长时间挂机不操作）时,下次读会自然取到新一年
+ */
+const yearCheckins = computed(() => {
+  const y = String(new Date().getFullYear())
+  return checkins.items.filter((c) => c.date.startsWith(y))
 })
+const yearCheckinCount = computed(() => yearCheckins.value.length)
+/** 本年度费用 = 每条打卡的 hours × 该课程当时的单价（用 course.price_per_hour 兜底，无课程按 0） */
+const yearCheckinFee = computed(() =>
+  yearCheckins.value.reduce((sum, c) => {
+    const pph = courses.byId(c.course_id)?.price_per_hour ?? 0
+    return sum + c.hours * pph
+  }, 0),
+)
 
 const recentCheckins = computed(() => checkins.items.slice(0, 5))
 
@@ -97,8 +109,8 @@ async function signOut() {
         <p class="text-sm text-dark-soft">看一眼关键数字 + 课时消耗</p>
       </header>
 
-      <!-- 汇总卡片（错位入场：60ms 间隔） -->
-      <div class="mb-6 grid grid-cols-4 items-stretch gap-4">
+      <!-- 汇总卡片（错位入场：40ms 间隔,5 张紧凑排） -->
+      <div class="mb-6 grid grid-cols-5 items-stretch gap-3">
         <div class="card-stagger" :style="{ animationDelay: '0ms' }">
           <StatCard
             label="课程总数"
@@ -130,12 +142,21 @@ async function signOut() {
         </div>
         <div class="card-stagger" :style="{ animationDelay: '180ms' }">
           <StatCard
-            label="今日打卡"
-            :value="todayCheckinCount"
+            label="本年度打卡"
+            :value="yearCheckinCount"
             unit="次"
             icon="✅"
             tone="brand"
             :hint="`累计 ${checkins.items.length} 次`"
+          />
+        </div>
+        <div class="card-stagger" :style="{ animationDelay: '240ms' }">
+          <StatCard
+            label="本年度费用"
+            :value="formatMoney(yearCheckinFee)"
+            icon="💸"
+            tone="sun"
+            :hint="`按打卡节数 × 当时单价计`"
           />
         </div>
       </div>
