@@ -1,20 +1,37 @@
 <script setup lang="ts">
+/**
+ * 各课程"已用 vs 剩余"堆叠柱图
+ *
+ * 数据源约定：父组件传一个 `rows: Array<{ name, used, remain }>` 进来。
+ *   - rows 为空时显示空状态
+ *   - rows 由父组件根据"时间筛选"自行聚合（保持图表组件纯净，不依赖 store）
+ */
 import { computed } from 'vue'
-import { useCoursesStore } from '@/stores/courses'
 import { useChartTheme } from '@/utils/chartTheme'
 import ChartBase from './ChartBase.vue'
 import EmptyState from '@/components/common/EmptyState.vue'
 
-const courses = useCoursesStore()
+const props = withDefaults(
+  defineProps<{
+    rows?: Array<{ name: string; used: number; remain: number }>
+    emptyTitle?: string
+    emptyDesc?: string
+  }>(),
+  {
+    rows: () => [],
+    emptyTitle: '还没有课程数据',
+    emptyDesc: '',
+  },
+)
+
 const { mode, get } = useChartTheme()  // mode 建立响应依赖
 
 const option = computed(() => {
   void mode.value  // 主题切换时重算
   const c = get()
-  const summaries = courses.summaries
-  const names = summaries.map((s) => s.name)
-  const used = summaries.map((s) => s.used_hours)
-  const remain = summaries.map((s) => s.remain_hours)
+  const names = props.rows.map((r) => r.name)
+  const used = props.rows.map((r) => r.used)
+  const remain = props.rows.map((r) => r.remain)
 
   return {
     backgroundColor: 'transparent',
@@ -69,7 +86,12 @@ const option = computed(() => {
 </script>
 
 <template>
-  <EmptyState v-if="courses.count === 0" icon="📊" title="还没有课程数据" />
+  <EmptyState
+    v-if="rows.length === 0"
+    icon="📊"
+    :title="emptyTitle"
+    :desc="emptyDesc"
+  />
   <div v-else class="h-full w-full">
     <ChartBase :option="option" />
   </div>

@@ -1,9 +1,10 @@
 <script setup lang="ts">
 /**
  * 统计分析（暗色玻璃版）
- *  1) 课程开销饼图
- *  2) 课时消耗柱图
+ *  1) 课程开销饼图 —— 按"期间内打卡日"筛，期间内某课程的开销 = 该课程单价 × 期间内打卡 hours
+ *  2) 课时消耗柱图 —— 同期间筛，只展示期间内有过打卡的课程，used = 期间内 hours，remain = total - used
  *  3) 时间段筛选
+ *  4) 期间内打卡明细 + 期间内统计文字
  */
 import { ref, computed, onMounted } from 'vue'
 import { useCoursesStore } from '@/stores/courses'
@@ -52,6 +53,59 @@ const periodStats = computed(() => {
   }, 0)
   return { hours, amount: sum, count: filteredCheckins.value.length }
 })
+
+/**
+ * 饼图数据：按 course_id 聚合期间内 hours，乘以单价折算金额
+ *   - 只显示期间内有过打卡的课程
+ *   - 没有单价 (total_hours=0) 的课程会被跳过，避免金额 = NaN
+ */
+const pieRows = computed<Array<{ name: string; value: number }>>(() => {
+  const acc = new Map<string, { name: string; amount: number; hours: number }>()
+  for (const ck of filteredCheckins.value) {
+    const course = courses.byId(ck.course_id)
+    if (!course || !course.total_hours) continue
+    const pricePerHour = course.total_amount / course.total_hours
+    const cur = acc.get(ck.course_id) ?? {
+      name: course.name,
+      amount: 0,
+      hours: 0,
+    }
+    cur.amount += pricePerHour * ck.hours
+    cur.hours += ck.hours
+    acc.set(ck.course_id, cur)
+  }
+  return Array.from(acc.values())
+    .filter((r) => r.amount > 0)
+    .map((r) => ({ name: r.name, value: Math.round(r.amount) }))
+})
+
+/**
+ * 柱图数据：used = 期间内 hours；remain = total_hours - used
+ *   - 只显示期间内有过打卡的课程（remain 截断到 0 防止出现负数）
+ */
+const barRows = computed<Array<{ name: string; used: number; remain: number }>>(() => {
+  const acc = new Map<string, { name: string; used: number; total: number }>()
+  for (const ck of filteredCheckins.value) {
+    const course = courses.byId(ck.course_id)
+    if (!course) continue
+    const cur = acc.get(ck.course_id) ?? {
+      name: course.name,
+      used: 0,
+      total: course.total_hours,
+    }
+    cur.used += ck.hours
+    acc.set(ck.course_id, cur)
+  }
+  return Array.from(acc.values()).map((r) => ({
+    name: r.name,
+    used: Math.round(r.used * 100) / 100,
+    remain: Math.max(0, Math.round((r.total - r.used) * 100) / 100),
+  }))
+})
+
+const hasFilteredData = computed(() => pieRows.value.length > 0 && barRows.value.length > 0)
+const isAllTime = computed(() => preset.value === 'all')
+const isCustomRange = computed(() => preset.value === 'custom')
 
 onMounted(() => {
   checkins.refresh()
@@ -120,21 +174,39 @@ onMounted(() => {
     <!-- 饼图 + 柱图 -->
     <div class="grid grid-cols-2 gap-4">
       <div class="glass-card p-5">
-        <h3 class="mb-3 font-bold text-dark-title">🥧 各课程开销占比</h3>
+        <h3 class="mb-3 font-bold text-dark-title">🥧 {{ isAllTime ? '各课程开销占比' : '期间内各课程开销占比' }}</h3>
         <div class="h-80">
-          <CostPieChart />
+          <CostPieChart
+            :rows="pieRows"
+            :empty-title="hasFilteredData ? '' : (isAllTime ? '还没有课程数据' : '该时段无打卡数据')"
+            :empty-desc="hasFilteredData ? '' : (isAllTime ? '添加课程后会按缴费金额占比展示' : (isCustomRange ? '调整日期范围或到「打卡」页补录' : '试试「全部」或换一个时间段'))"
+          />
         </div>
         <p class="mt-2 text-center text-xs text-dark-soft">
-          总投入 {{ formatMoney(courses.totalAmount) }}
+          <template v-if="isAllTime">
+            总投入 {{ formatMoney(courses.totalAmount) }}
+          </template>
+          <template v-else>
+            期间内折算 {{ formatMoney(periodStats.amount) }}（{{ periodStats.hours }} 节）
+          </template>
         </p>
       </div>
       <div class="glass-card p-5">
-        <h3 class="mb-3 font-bold text-dark-title">📊 各课程课时消耗 vs 剩余</h3>
+        <h3 class="mb-3 font-bold text-dark-title">📊 {{ isAllTime ? '各课程课时消耗 vs 剩余' : '期间内各课程已用 vs 剩余' }}</h3>
         <div class="h-80">
-          <HoursBarChart />
+          <HoursBarChart
+            :rows="barRows"
+            :empty-title="hasFilteredData ? '' : (isAllTime ? '还没有课程数据' : '该时段无打卡数据')"
+            :empty-desc="hasFilteredData ? '' : (isAllTime ? '添加课程后会按 used / remain 堆叠展示' : (isCustomRange ? '调整日期范围或到「打卡」页补录' : '试试「全部」或换一个时间段'))"
+          />
         </div>
         <p class="mt-2 text-center text-xs text-dark-soft">
-          购 {{ courses.totalHours }} 节 · 已用 {{ courses.usedHours }} 节 · 剩 {{ courses.remainHours }} 节
+          <template v-if="isAllTime">
+            购 {{ courses.totalHours }} 节 · 已用 {{ courses.usedHours }} 节 · 剩 {{ courses.remainHours }} 节
+          </template>
+          <template v-else>
+            期间内已用 {{ periodStats.hours }} 节 · 涉及 {{ barRows.length }} 门课
+          </template>
         </p>
       </div>
     </div>
