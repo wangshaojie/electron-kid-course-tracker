@@ -42,36 +42,38 @@ const rules = {
 
 const isEdit = computed(() => !!props.course)
 
+// 父组件用 v-if + key 强制重建组件，所以首次挂载时 watch 默认不会回调。
+// 必须 immediate: true，否则编辑弹窗打开后 form 还是默认值。
 watch(
-  () => props.modelValue,
-  (v) => {
-    if (v) {
-      // 打开时回填
-      if (props.course) {
-        form.value = {
-          name: props.course.name,
-          institution: props.course.institution,
-          total_amount: props.course.total_amount,
-          total_hours: props.course.total_hours,
-          paid_at: props.course.paid_at,
-          expires_at: props.course.expires_at,
-          tags: props.course.tags,
-          note: props.course.note,
-        }
-      } else {
-        form.value = {
-          name: '',
-          institution: '',
-          total_amount: 0,
-          total_hours: 0,
-          paid_at: todayStr(),
-          expires_at: null,
-          tags: '',
-          note: '',
-        }
+  () => [props.modelValue, props.course] as const,
+  ([open]) => {
+    if (!open) return
+    // 打开时回填
+    if (props.course) {
+      form.value = {
+        name: props.course.name,
+        institution: props.course.institution,
+        total_amount: props.course.total_amount,
+        total_hours: props.course.total_hours,
+        paid_at: props.course.paid_at,
+        expires_at: props.course.expires_at,
+        tags: props.course.tags,
+        note: props.course.note,
+      }
+    } else {
+      form.value = {
+        name: '',
+        institution: '',
+        total_amount: 0,
+        total_hours: 0,
+        paid_at: todayStr(),
+        expires_at: null,
+        tags: '',
+        note: '',
       }
     }
   },
+  { immediate: true },
 )
 
 const submitting = ref(false)
