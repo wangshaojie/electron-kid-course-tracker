@@ -36,11 +36,19 @@ const repoRoot = resolve(__dirname, '..')
 const pkgPath = resolve(repoRoot, 'desktop/package.json')
 
 // ---- 工具函数 ----
+/**
+ * 跑子命令。
+ * 默认走 shell=true（Windows 兼容 pnpm/npm 这种 .ps1 / .cmd 包装器），
+ * 但 `git commit -m "msg with: colon"` 这种带特殊字符的不能进 shell 解析
+ * —— cmd.exe 把 `:` 当 label 起始，会把消息截断报 "pathspec did not match"。
+ * 所以对 git / node 这种原生 .exe 命令，调用方传 `{ shell: false }` 走 CreateProcess。
+ */
 function run(cmd, args, opts = {}) {
+  const useShell = opts.shell ?? true
   const r = spawnSync(cmd, args, {
     stdio: 'inherit',
     cwd: opts.cwd ?? repoRoot,
-    shell: process.platform === 'win32',
+    shell: useShell,
     ...opts,
   })
   if (r.status !== 0) {
@@ -135,8 +143,11 @@ async function main() {
   console.log(`\n当前 version: ${before.version}`)
 
   // 2) bump version（pnpm version 会自动改 package.json + 跑 lifecycle scripts）
-  // 用 --filter / -F 走 pnpm workspace 过滤，比 --dir 在 Windows PowerShell 下更稳
-  run('pnpm', ['version', level, '--no-git-tag-version', '--filter', 'course-tracker'])
+  // 切到 desktop 目录跑 pnpm version —— 之前写 --filter course-tracker 是想走 pnpm
+  // workspace 过滤，但本仓库根本没有 pnpm-workspace.yaml（结构是单包，desktop/ 嵌套只是
+  // 目录结构），pnpm 会把 --filter 透传给 npm 触发 "Unknown cli config" → EUSAGE。
+  // 用 cwd 切目录是最直接的修法，不走 shell 拼接。
+  run('pnpm', ['version', level, '--no-git-tag-version'], { cwd: resolve(repoRoot, 'desktop') })
 
   const after = readPkg()
   const newVersion = after.version
@@ -168,11 +179,13 @@ async function main() {
   }
 
   // 4) commit + tag + push
-  run('git', ['add', '-A'])
-  run('git', ['commit', '-m', `release: v${newVersion}`])
-  run('git', ['tag', tag])
-  run('git', ['push', 'origin', branch])
-  run('git', ['push', 'origin', tag])
+  // git 系列走 shell=false：commit -m 的 message 含 ":" 在 cmd shell 解析下会被当作 label 截断
+  // tag / push / add 也都用 array 直传，干净安全
+  run('git', ['add', '-A'], { shell: false })
+  run('git', ['commit', '-m', `release: v${newVersion}`], { shell: false })
+  run('git', ['tag', tag], { shell: false })
+  run('git', ['push', 'origin', branch], { shell: false })
+  run('git', ['push', 'origin', tag], { shell: false })
 
   console.log(`\n✅ 已推 tag ${tag} 到 origin`)
   console.log(`\n下一步：去 GitHub Actions 页面观察 release 工作流：`)
