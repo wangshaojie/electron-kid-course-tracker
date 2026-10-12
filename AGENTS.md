@@ -364,7 +364,18 @@ App.vue 有三件套：
 - 关键操作（删除/清空/认领）必须 `dangerousConfirm`（输入关键字二次确认）
 - Toast 限一个长驻（用 `duration: 0, showClose: true`）
 
-### 4.6 管理员模块 — 已下线（v0.6+）
+### 4.6 版本更新入口（登录态无关）
+
+版本更新属于产品级能力，**不应该被"必须登录才能感知"卡住**：
+
+- **主进程自动 check**：`electron/main.ts` 启动后 ~5 秒 `checkForUpdates()`，无登录要求；结果通过 `update:available` IPC 广播给**所有** `BrowserWindow`，所以哪怕用户在登录页也已经能收到
+- **渲染端监听全局**：`App.vue` 的 `onMounted` 调一次 `updateStore.bindUpdater()`，挂上 4 路 IPC 监听（available / progress / downloaded / error），登录页同样生效 —— 因此 `<UpdateDialog>` 也是全局可见的（见 `App.vue` 模板里挂在 `<el-config-provider>` 内的注释）
+- **登录页手动入口**：`Login.vue` 卡片底部新增版本栏，显示"当前版本 vX.Y.Z"和"检测更新"按钮，沿用 `useUpdateStore().checkNow()` 走 Settings.vue 同一条 IPC；如有未处理的 `has-update`，按钮升级为"有新版本 vX.Y.Z · 立即更新"
+- **不要把版本更新推到 Settings.vue 才看得到** —— 老版本只挂侧栏设置页的"检测更新"按钮，未登录用户拿不到入口
+
+详见 `stores/update.ts` 的状态机 + `electron/updater.ts` 的下载/安装链路。
+
+### 4.7 管理员模块 — 已下线（v0.6+）
 
 v0.3-v0.5.x 上线的管理员后台（注册用户表 / 活跃度 / 课程热度榜 / 登录设备审计）已在 **v0.6+ 移除**：
 

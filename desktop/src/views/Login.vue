@@ -16,10 +16,11 @@
  *  - 注册：密码 Tab 底部"点此注册"链接 → RegisterDialog
  *  - 忘记密码：密码 Tab 底部链接 → ForgotPasswordDialog
  */
-import { ref, computed, onUnmounted, reactive, type Ref } from 'vue'
+import { ref, computed, onMounted, onUnmounted, reactive, type Ref } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { useAuthStore } from '@/stores/auth'
+import { useUpdateStore } from '@/stores/update'
 import { isValidEmail } from '@/utils/email'
 import ForgotPasswordDialog from '@/components/account/ForgotPasswordDialog.vue'
 import RegisterDialog from '@/components/account/RegisterDialog.vue'
@@ -28,6 +29,39 @@ import BrandLogo from '@/components/brand/BrandLogo.vue'
 const router = useRouter()
 const route = useRoute()
 const auth = useAuthStore()
+const updateStore = useUpdateStore()
+
+/**
+ * 登录页检测更新 —— 与 Settings.vue 走同一条 `manualCheck` IPC。
+ * 注意：`updateStore.bindUpdater()` 是 App.vue 在 onMounted 里挂的全局监听，
+ * 所以登录页一旦收到主进程推送的 `update:available`，UpdateDialog 也会自动弹"立即更新"。
+ * 这里只是给登录页一个**手动入口 + 版本号展示**，让没登录的用户也能感知到版本。
+ */
+async function onCheckUpdate() {
+  if (updateStore.checking) return
+  if (!window.updater?.manualCheck) {
+    ElMessage.warning('当前环境不支持检测更新')
+    return
+  }
+  const r = await updateStore.checkNow()
+  if (r === 'up-to-date') {
+    ElMessage.success(`已是最新版本 v${updateStore.currentVersion}`)
+  } else if (r === 'failed') {
+    ElMessage.error('检测更新失败，请检查网络后重试')
+  }
+  // 'has-update' 由 App.vue 监听 update:available 自动弹"立即更新"对话框，不重复
+}
+
+onMounted(() => {
+  // 拿当前版本号（登录前也要知道自己在哪个版本上，主进程已经从 package.json 读了）
+  // 不阻塞 UI；store 里已经有值就跳过
+  if (!updateStore.currentVersion) void updateStore.loadCurrentVersion()
+})
+
+/** "有新版本可更新"快捷入口（替代 Settings.vue 里同一行 banner 的点击动作） */
+function onUpdateNowFromLogin() {
+  updateStore.updateNow()
+}
 
 // 登录方式：otp=验证码（折叠）/ password=密码（默认）
 const mode = ref<'otp' | 'password'>('password')
@@ -393,6 +427,36 @@ onUnmounted(() => {
       <p class="footer-hint">
         新用户请在「密码登录」Tab 底部点"点此注册"
       </p>
+
+      <!--
+        登录页底部 · 版本号 + 检测更新
+        不需要登录就能感知到新版本；点"检测更新"走 Settings.vue 同一条 IPC。
+        如果主进程启动时已经查到新版本（App.vue 进的 bindUpdater 是全局的，登录页也会看到弹窗），
+        这里也会显示一行"有新版本 → 立即更新"作冗余入口。
+      -->
+      <div class="version-bar">
+        <span class="version-bar-text">
+          当前版本 <b>v{{ updateStore.currentVersion || '…' }}</b>
+        </span>
+        <span v-if="updateStore.hasUpdate" class="version-bar-dot" aria-hidden="true" />
+        <button
+          v-if="updateStore.hasUpdate"
+          type="button"
+          class="link version-bar-action"
+          @click="onUpdateNowFromLogin"
+        >
+          有新版本 v{{ updateStore.latestVersion }} · 立即更新
+        </button>
+        <button
+          v-else
+          type="button"
+          class="link version-bar-action"
+          :disabled="updateStore.checking"
+          @click="onCheckUpdate"
+        >
+          {{ updateStore.checking ? '检测中…' : '检测更新' }}
+        </button>
+      </div>
     </div>
 
     <!-- 忘记密码 + 注册 弹窗（共用 OTP 流程组件） -->
@@ -817,6 +881,40 @@ onUnmounted(() => {
 
 .remember-text { font-size: 13px; color: rgba(255, 255, 255, 0.75); }
 .remember-hint { font-size: 11px; color: rgba(255, 255, 255, 0.3); margin-left: auto; }
+
+/* ============== 版本栏（登录页底部） ============== */
+.version-bar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 14px;
+  padding-top: 12px;
+  border-top: 1px dashed rgba(255, 255, 255, 0.08);
+  font-size: 12px;
+  color: rgba(255, 255, 255, 0.4);
+  flex-wrap: wrap;
+}
+.version-bar-text b { font-weight: 600; color: rgba(255, 255, 255, 0.7); }
+.version-bar-dot {
+  display: inline-block;
+  width: 7px; height: 7px;
+  border-radius: 50%;
+  background: #E08A1E; /* 暖橙点缀，呼应品牌色 */
+  box-shadow: 0 0 0 3px rgba(224, 138, 30, 0.18);
+  animation: version-bar-pulse 1.6s ease-in-out infinite;
+}
+.version-bar-action {
+  font-size: 12px !important;
+  padding: 2px 6px !important;
+  color: #5FCE89;
+}
+.version-bar-action:disabled { opacity: 0.6; cursor: default; }
+.version-bar-action:hover:not(:disabled) { color: #94DFB0; }
+@keyframes version-bar-pulse {
+  0%, 100% { box-shadow: 0 0 0 3px rgba(224, 138, 30, 0.18); }
+  50%      { box-shadow: 0 0 0 6px rgba(224, 138, 30, 0); }
+}
 
 /* ============== Footer ============== */
 .footer-hint {
