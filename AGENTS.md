@@ -479,7 +479,9 @@ vercel logs --project electron-kid-course-tracker --cwd vercel
 ```
 - `/api/auth-otp/{send,verify,login,...}` → `api/auth-otp/[action].js`
 - `/api/data-api/{health,b/<table>}` → `api/data-api.js`
-- 桌面端 `.env.production`：`VITE_AUTH_OTP_URL=https://<host>/api/auth-otp`、`VITE_DATA_API_URL=https://<host>/api/data-api`
+- 桌面端 `.env.production`：`VITE_AUTH_OTP_URL=https://api.240730.xyz/api/auth-otp`、`VITE_DATA_API_URL=https://api.240730.xyz/api/data-api`
+  - 必须用**绑到本项目的自定义域名**；`*.vercel.app` 在国内直连被阻断（不开代理即 TIMEOUT），
+    预览部署 URL 还会因 Deployment Protection 让 OPTIONS 预检返回 302
 
 ### 7.3 数据库
 
@@ -509,8 +511,10 @@ pnpm release 1.2.3                   # 直跳指定版本
 5. CI 跑完 → `https://github.com/<owner>/<repo>/releases/tag/vX.Y.Z` 自动出现 .exe 资产
 
 **首次配 GitHub Secrets**（仓库 Settings → Secrets and variables → Actions）：
-- `VITE_AUTH_OTP_URL`（如 `https://<host>/api/auth-otp`）
-- `VITE_DATA_API_URL`（如 `https://<host>/api/data-api`）
+- `VITE_AUTH_OTP_URL`（如 `https://api.240730.xyz/api/auth-otp`）
+- `VITE_DATA_API_URL`（如 `https://api.240730.xyz/api/data-api`）
+- ⚠️ 这两个 secret **不能删**：删掉后 `${{ secrets.X }}` 解析为空串，Vite 里 `process.env` 会
+  无条件覆盖 `.env` 文件 → 产物里地址为空 → 启动失败（v0.5.28+ 会显示错误页而非白屏）
 - `GITHUB_TOKEN` 自动提供，无需手动配
 
 ⚠️ **package.json version 才是 electron-builder 命名产物的依据**，不是 git tag。

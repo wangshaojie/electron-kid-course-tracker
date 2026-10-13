@@ -13,8 +13,11 @@
 
 | Name | Value 来源 |
 |---|---|
-| `VITE_AUTH_OTP_URL` | Vercel 函数 URL + `/auth-otp`，如 `https://<your-project>.vercel.app/auth-otp` |
-| `VITE_DATA_API_URL` | Vercel 函数 URL + `/data-api`，如 `https://<your-project>.vercel.app/data-api` |
+| `VITE_AUTH_OTP_URL` | `/api/auth-otp` 根 URL，如 `https://api.240730.xyz/api/auth-otp` |
+| `VITE_DATA_API_URL` | `/api/data-api` 根 URL，如 `https://api.240730.xyz/api/data-api` |
+
+> 必须用**绑到本项目的自定义域名**，不要用 `*.vercel.app`：预览部署 URL 会 302 导致 CORS 预检失败；
+> 生产别名在国内直连被阻断，不开代理无法登录。
 
 **只这 2 个**。v0.4.x 之后项目从 CloudBase 迁到 Vercel Functions + Supabase PG（已下线 cloudbase/ 整个目录），不再需要 `VITE_CLOUDBASE_ENV_ID` / `VITE_CLOUDBASE_ACCESS_KEY` 这 2 个 secret。
 
@@ -203,7 +206,11 @@ throw new Error("VITE_CLOUDBASE_ENV_ID 未设置（.env.development）");
 2. GitHub Secrets 加 `VITE_CLOUDBASE_ENV_ID` 和 `VITE_CLOUDBASE_ACCESS_KEY` 两个
 3. bump version 到 v0.2.2 重打
 
-> 现在的项目（v0.4.x+）已经迁到 Vercel Functions + Supabase，只剩 2 个 `VITE_*` secret（`VITE_AUTH_OTP_URL` / `VITE_DATA_API_URL`），但"漏 secret 启动白屏"这条原则仍然适用。
+> 现在的项目（v0.4.x+）已经迁到 Vercel Functions + Supabase，只剩 2 个 `VITE_*` secret（`VITE_AUTH_OTP_URL` / `VITE_DATA_API_URL`），但"漏 secret 启动就炸"这条原则仍然适用。
+>
+> **v0.5.28+ 已改为可读错误页**：`cloudbase.ts` 不再在模块顶层 `throw`，改为导出 `getApiConfigError()`，
+> 由 `src/main.ts` 在 mount 之前调用；缺失时渲染「应用配置缺失，无法启动」错误页并给出排查指引，不再是白屏。
+> 排查时可以先看启动日志里的 `[boot]` 打点，或直接看页面提示的 secret 名称。
 
 ### v0.2.1 之前的 CI 折腾
 

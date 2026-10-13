@@ -15,17 +15,28 @@
 const authOtpUrl = import.meta.env.VITE_AUTH_OTP_URL as string
 const dataApiUrl = import.meta.env.VITE_DATA_API_URL as string
 
-if (!authOtpUrl || !dataApiUrl) {
-  throw new Error(
-    '缺少接口地址：请配置 VITE_AUTH_OTP_URL / VITE_DATA_API_URL（指向部署好的 auth-otp / data-api HTTP Function）',
-  )
+/**
+ * 接口地址自检（v0.5.28+）
+ * --------------------------------------------------------------
+ * 历史坑：这里原本是**模块顶层 throw**。一旦打包时这两个变量为空
+ * （GitHub Actions 的 secret 被删 / 没配 → `${{ secrets.X }}` 解析成空串，
+ * Vite 里 process.env 又会无条件覆盖 .env 文件），整个模块图在 import 阶段就炸，
+ * Vue 根本 mount 不起来 → 用户只看到白屏。
+ * 改成暴露检查函数，由 src/main.ts 在 mount 之前调用并渲染可读的错误页。
+ */
+export function getApiConfigError(): string | null {
+  const missing: string[] = []
+  if (!authOtpUrl) missing.push('VITE_AUTH_OTP_URL')
+  if (!dataApiUrl) missing.push('VITE_DATA_API_URL')
+  if (!missing.length) return null
+  return `缺少接口地址配置：${missing.join(' 和 ')}`
 }
 
-/** auth-otp HTTP function 根 URL */
-export const AUTH_OTP_URL = authOtpUrl
+/** auth-otp HTTP function 根 URL（业务 CRUD / 鉴权） */
+export const AUTH_OTP_URL = authOtpUrl || ''
 
 /** data-api HTTP function 根 URL（业务 CRUD） */
-export const DATA_API_URL = dataApiUrl
+export const DATA_API_URL = dataApiUrl || ''
 
 // ==================== 客户端元信息 ====================
 // App 启动时由 App.vue/auth.bootstrap 调用 refreshClientMeta()，从主进程读当前版本。

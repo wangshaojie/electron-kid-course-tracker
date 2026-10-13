@@ -247,10 +247,20 @@ Vite 在 `dev` / `build` / `preview` 三种 mode 下读不同文件：
 
 | 变量 | 说明 |
 |---|---|
-| `VITE_AUTH_OTP_URL` | `/api/auth-otp` 根 URL（如 `https://<your-project>.vercel.app/auth-otp`） |
-| `VITE_DATA_API_URL` | `/api/data-api` 根 URL（如 `https://<your-project>.vercel.app/data-api`） |
+| `VITE_AUTH_OTP_URL` | `/api/auth-otp` 根 URL（如 `https://api.240730.xyz/api/auth-otp`） |
+| `VITE_DATA_API_URL` | `/api/data-api` 根 URL（如 `https://api.240730.xyz/api/data-api`） |
 
 **只这 2 个**。Vercel Functions 直接吃请求头里的 `Authorization: Bearer <jwt>`，不需要额外 SDK 凭据。
+
+> **地址必须填绑到本项目的自定义域名，不要用 `*.vercel.app`**：
+> - 预览部署 URL（`xxx-<hash>-<team>.vercel.app`）开了 Deployment Protection，OPTIONS 预检会返回 302
+>   → 浏览器报 `Redirect is not allowed for a preflight request`；
+> - 生产别名 `<project>.vercel.app` 在国内直连被阻断，不开代理会 `ERR_CONNECTION_TIMED_OUT`。
+>
+> 做法：Vercel 项目 Settings → Domains 添加子域 → DNS 里 CNAME 到 Vercel 给的
+> `<hash>.vercel-dns-017.com`（Cloudflare 上要关代理/灰云）。
+
+> v0.5.28+ 启动时会自检这两个地址，缺失则渲染可读错误页而不是白屏。
 
 ### 6.3 JWT / 登录态
 

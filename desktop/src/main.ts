@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import App from './App.vue'
 import { router } from './router'
 import { useAuthStore } from './stores/auth'
+import { getApiConfigError } from './lib/cloudbase'
 // 手动 import 函数式弹窗样式：unplugin 按需不会处理 JS 直接调用的 ElMessageBox / ElMessage
 import 'element-plus/theme-chalk/el-message-box.css'
 import 'element-plus/theme-chalk/el-message.css'
@@ -39,8 +40,42 @@ function applyEarlyTheme() {
 }
 applyEarlyTheme()
 
+/**
+ * 渲染"启动失败"错误页
+ * --------------------------------------------------------------
+ * 不用 Vue / Element Plus 渲染 —— 出问题时挂掉的正是 Vue 启动链路本身。
+ * 直接写 DOM + 内联样式，保证在任何构建产物里都能显示出来（替代白屏）。
+ */
+function renderFatalError(title: string, detail: string, hint: string) {
+  const root = document.getElementById('app') ?? document.body
+  root.innerHTML = `
+    <div style="min-height:100vh;display:flex;align-items:center;justify-content:center;background:#F7FAF8;padding:24px;box-sizing:border-box">
+      <div style="max-width:560px;width:100%;background:#fff;border:1px solid #E5E7EB;border-radius:12px;padding:28px 32px;box-shadow:0 2px 12px rgba(0,0,0,.06);font-family:-apple-system,BlinkMacSystemFont,'PingFang SC','Microsoft YaHei',sans-serif;color:#1F2937">
+        <div style="font-size:18px;font-weight:600;color:#1F2937;margin-bottom:12px">${title}</div>
+        <div style="font-size:14px;line-height:1.7;margin-bottom:16px">${detail}</div>
+        <div style="background:#F0FDF4;border-left:3px solid #3FB87A;border-radius:6px;padding:12px 14px;font-size:13px;line-height:1.7;color:#374151">${hint}</div>
+      </div>
+    </div>
+  `
+}
+
 async function bootstrap() {
   mark('start')
+
+  // 0) 启动自检：接口地址缺失时给出可读错误页，而不是白屏
+  //    （GitHub Secret 被删会解析成空串并覆盖 .env，历史上一度导致打包产物白屏）
+  const cfgError = getApiConfigError()
+  if (cfgError) {
+    renderFatalError(
+      '应用配置缺失，无法启动',
+      `${cfgError}。<br>这两个地址需要在<strong>构建时</strong>注入，运行后再改配置文件无效。`,
+      '如果你是自己打包安装的程序：请到仓库 Settings → Secrets and variables → Actions 确认 '
+        + '<code>VITE_AUTH_OTP_URL</code> 与 <code>VITE_DATA_API_URL</code> 都已设置，然后重新打包安装。<br>'
+        + '注意：secret 被删除时会被解析成空字符串并覆盖 .env，产物里地址会变成空值。',
+    )
+    return
+  }
+
   const app = createApp(App)
   mark('createApp')
   const pinia = createPinia()
@@ -100,6 +135,12 @@ bootstrap().catch((err) => {
     app.mount('#app')
   } catch (e2) {
     console.error('[main] fallback mount also failed:', e2)
+    // 连兜底挂载都失败了 —— 别留白屏，把原因显示出来
+    renderFatalError(
+      '应用启动失败',
+      `启动过程中出现异常，且兜底挂载也失败了：${String(e2)}`,
+      '可以打开开发者工具（Ctrl+Shift+I）查看 Console 里的完整错误日志。',
+    )
   }
 })
 
