@@ -26,12 +26,14 @@ import { requireAuthAsync, sendJson, readJsonBody, preflight } from '../lib/auth
 // 业务表白名单（与 CloudBase 版完全一致：select/write/filters/orders/dateRange）
 const BUSINESS_TABLES = {
   children: {
+    pk: 'id',
     select: ['id', 'owner_id', 'name', 'emoji', 'color', 'sort_order', 'created_at'],
     write: ['name', 'emoji', 'color', 'sort_order'],
     filters: [],
     orders: ['sort_order', 'created_at'],
   },
   courses: {
+    pk: 'id',
     select: [
       'id',
       'owner_id',
@@ -52,6 +54,7 @@ const BUSINESS_TABLES = {
     orders: ['paid_at', 'created_at'],
   },
   checkins: {
+    pk: 'id',
     select: ['id', 'owner_id', 'child_id', 'course_id', 'date', 'hours', 'feedback', 'created_at'],
     write: ['child_id', 'course_id', 'date', 'hours', 'feedback'],
     filters: ['child_id', 'course_id'],
@@ -62,6 +65,8 @@ const BUSINESS_TABLES = {
     // ⚠️ theme 必须留在 write 白名单里，否则 persistRemote 会被 pickWriteFields
     //    静默丢弃（PATCH 仍返回 200），导致「多设备主题同步」永远写不进去，
     //    而 syncFromCloud 又会拿云端默认值 'system' 覆盖用户本地选择。
+    // ⚠️ pk = owner_id（不是 id）→ 只有这张表支持「不带 id 的 upsert」
+    pk: 'owner_id',
     select: ['owner_id', 'active_child_id', 'theme', 'created_at', 'updated_at'],
     write: ['active_child_id', 'theme', 'updated_at'],
     filters: [],
@@ -216,27 +221,30 @@ async function handleBusiness(req, res, table, id, searchParams) {
         if (!rows.length) return sendJson(res, 404, { error: 'not_found', detail: `${table}/${id}` })
         return sendJson(res, 200, { ok: true, data: rows[0] })
       }
-      // 无 id = 按 owner_id upsert（user_prefs）
-      const existing = await sql`SELECT * FROM ${sql(table)} WHERE owner_id = ${uid} LIMIT 1`
-      if (existing.length) {
-        // 空 payload → 不动数据，直接回当前行（避免 SET 为空导致 SQL 语法错）
-        if (!Object.keys(payload).length) {
-          return sendJson(res, 200, { ok: true, data: existing[0] })
-        }
-        const setClauses = Object.keys(payload).map((k, idx) => `${k} = $${idx + 1}`).join(', ')
-        const values = [...Object.values(payload), uid]
-        const rows = await sql.query(
-          `UPDATE ${table} SET ${setClauses} WHERE owner_id = $${values.length} RETURNING *`,
-          values,
-        )
-        return sendJson(res, 200, { ok: true, data: rows[0] })
+      // 无 id = 按 owner_id upsert（只有 user_prefs 的主键是 owner_id）
+      //
+      // ⚠️ 用真正的 INSERT ... ON CONFLICT 原子 upsert，而不是「先 SELECT 再 UPDATE/INSERT」：
+      //    ① 竞态：「写主题」和「写激活孩子」并发时，两边都 SELECT 到"行不存在"，
+      //       然后各自 INSERT → 主键冲突报错，其中一个字段写不进去。
+      //    ② 字段覆盖：DO UPDATE 只 SET 本次请求真正带了的列，
+      //       写 active_child_id 不会动 theme，写 theme 不会动 active_child_id。
+      if (def.pk !== 'owner_id') {
+        return sendJson(res, 400, { error: 'bad_query', detail: `该表不支持按 owner_id upsert` })
+      }
+      // 空 payload → 不动数据，直接回当前行（避免 SET 为空导致 SQL 语法错）
+      if (!Object.keys(payload).length) {
+        const existing = await sql`SELECT * FROM ${sql(table)} WHERE owner_id = ${uid} LIMIT 1`
+        return sendJson(res, 200, { ok: true, data: existing[0] ?? null })
       }
       const insertPayload = { ...payload, owner_id: uid }
       const cols = Object.keys(insertPayload)
       const placeholders = cols.map((_, idx) => `$${idx + 1}`).join(', ')
       const values = cols.map((k) => insertPayload[k])
+      const setCols = cols.filter((c) => c !== 'owner_id')
+      const setClauses = setCols.map((c) => `${c} = EXCLUDED.${c}`).join(', ')
       const rows = await sql.query(
-        `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) RETURNING *`,
+        `INSERT INTO ${table} (${cols.join(', ')}) VALUES (${placeholders}) ` +
+          `ON CONFLICT (owner_id) DO UPDATE SET ${setClauses} RETURNING *`,
         values,
       )
       return sendJson(res, 200, { ok: true, data: rows[0] })
@@ -269,6 +277,7 @@ async function handleBusiness(req, res, table, id, searchParams) {
  * · course_hours_exceeded：触发器 enforce_course_hours_limit() 抛的
  *   "累计课时超过购买课时"（SQLSTATE 23514 + 自定义 message 前缀）
  * · 其余 23514：表级 CHECK 约束（如 hours > 0、amount > 0）
+ * · 42703：请求的列不存在（如 user_prefs.theme 这列还没建）
  *
  * ⚠️ 之前这些 PG 原始报错会**原样回给客户端**（detail 里带表名/列名/约束名），
  *    等于给攻击者一份 schema 说明书。现在统一翻译成固定文案，
@@ -281,6 +290,11 @@ function describeConstraintError(e) {
   }
   if (e?.code === '23514') {
     return { status: 400, error: 'check_violation', detail: '数据不合法：金额、课时必须大于 0' }
+  }
+  // 字段不存在：不回显列名（避免泄露 schema），只回固定 code，
+  // 客户端据此判断"云端还没这列"（如 theme 列缺失 → 永久降级为只本地）
+  if (e?.code === '42703') {
+    return { status: 400, error: 'unknown_column', detail: '请求的字段不存在' }
   }
   return null
 }

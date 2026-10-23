@@ -5,9 +5,11 @@
  */
 import { computed, ref, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
+import { ElMessage } from 'element-plus'
 import { useChildrenStore } from '@/stores/children'
 import { useCoursesStore } from '@/stores/courses'
 import { useCheckinsStore } from '@/stores/checkins'
+import { errorText } from '@/utils/error'
 
 const children = useChildrenStore()
 const courses = useCoursesStore()
@@ -16,6 +18,8 @@ const router = useRouter()
 
 const current = computed(() => children.active)
 const open = ref(false)
+/** 切换中：禁用下拉里的其它选项，避免连点造成多次并发刷新 */
+const switching = ref(false)
 
 function toggle() {
   open.value = !open.value
@@ -25,11 +29,27 @@ function close() {
   open.value = false
 }
 
+/**
+ * 切换宝贝
+ * --------------------------------------------------------------
+ * ⚠️ 之前 courses.refresh() / checkins.refresh() 既没 await 也没 catch：
+ *   · 没 await → 弹窗一关就看到上一个孩子的课程/打卡；
+ *     用户这时点「打卡」会把新孩子 + 旧课程写出去（脏数据）。
+ *   · 没 catch → 刷新失败静默，界面永远停在旧数据，用户完全无感知。
+ * 现在：等刷新真正结束再关弹窗，失败明确提示。
+ * （store 侧还有代次守卫，多个切换并发时旧响应不会覆盖新数据。）
+ */
 async function pick(id: string) {
   if (id !== children.activeId) {
-    await children.setActive(id)
-    courses.refresh()
-    checkins.refresh()
+    switching.value = true
+    try {
+      await children.setActive(id)
+      await Promise.all([courses.refresh(), checkins.refresh()])
+    } catch (e) {
+      ElMessage.error(errorText(e, '切换宝贝失败，请重试'))
+    } finally {
+      switching.value = false
+    }
   }
   close()
 }
@@ -109,6 +129,7 @@ if (typeof window !== 'undefined') {
           :style="c.id === children.activeId
             ? { background: 'rgba(63,184,122,0.15)', color: 'var(--text-title)' }
             : { color: 'var(--text-body)' }"
+          :disabled="switching"
           @click="pick(c.id)"
         >
           <div

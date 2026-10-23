@@ -42,17 +42,26 @@ export const useCheckinsStore = defineStore('checkins', () => {
   const count = computed(() => items.value.length)
   const byCourse = computed(() => (cid: string) => items.value.filter((c) => c.course_id === cid))
 
+  /**
+   * 刷新打卡记录（默认当前宝贝，可选按课程 / 日期区间过滤）
+   * ⚠️ 代次守卫（seq）：切换宝贝时多个 refresh 可能同时在飞，
+   *    旧请求晚返回会覆盖新宝贝的数据 → 只有最新那次的响应才写 store。
+   */
+  let refreshSeq = 0
   async function refresh(filter?: { courseId?: string; from?: string; to?: string }) {
     requireUid()
     const children = useChildrenStore()
     const cid = children.activeIdSafe
     if (!cid) { items.value = []; return }
 
+    const seq = ++refreshSeq
     const params = new URLSearchParams({ child_id: cid, order: 'date', asc: 'false' })
     if (filter?.courseId) params.set('course_id', filter.courseId)
     if (filter?.from) params.set('date_gte', filter.from)
     if (filter?.to) params.set('date_lte', filter.to)
-    items.value = await businessApi<Checkin[]>('GET', `/b/checkins?${params.toString()}`)
+    const rows = await businessApi<Checkin[]>('GET', `/b/checkins?${params.toString()}`)
+    if (seq !== refreshSeq) return
+    items.value = rows
   }
 
   async function create(input: CheckinInput): Promise<Checkin> {
@@ -64,11 +73,19 @@ export const useCheckinsStore = defineStore('checkins', () => {
     // 客户端预校验剩余课时（直接用 store 已聚合的 used_hours，避免重复查询）
     const courses = useCoursesStore()
     const course = courses.byId(input.course_id)
-    if (course) {
-      const used = course.used_hours
-      if (used + input.hours > course.total_hours) {
-        throw new Error(`剩余课时不足（剩 ${round2(course.total_hours - used)} 节，要扣 ${input.hours}）`)
-      }
+    // ⚠️ 课程必须属于当前宝贝：用户在打卡弹窗开着的时候切了宝贝，
+    //    这时 course_id 还指着上一个孩子的课，child_id 却已经是新孩子 →
+    //    写出去就是一条"课程和孩子对不上"的脏数据。这里直接拦掉。
+    if (!course) {
+      throw new Error('课程不存在或不属于当前宝贝，请重新选择')
+    }
+    if (course.child_id !== cid) {
+      throw new Error('该课程不属于当前宝贝，请先切换到对应宝贝再打卡')
+    }
+    // 剩余课时预校验（直接用 store 已聚合的 used_hours，避免重复查询）
+    const used = course.used_hours
+    if (used + input.hours > course.total_hours) {
+      throw new Error(`剩余课时不足（剩 ${round2(course.total_hours - used)} 节，要扣 ${input.hours}）`)
     }
 
     const c = await businessApi<Checkin>('POST', '/b/checkins', {

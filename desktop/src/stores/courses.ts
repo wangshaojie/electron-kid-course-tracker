@@ -97,17 +97,29 @@ export const useCoursesStore = defineStore('courses', () => {
     return out
   })
 
+  /**
+   * 刷新本宝贝的课程 + 已用课时聚合
+   * --------------------------------------------------------------
+   * ⚠️ 代次守卫（seq）：切换宝贝时 refresh 是异步的，用户连点 A→B→C 会有
+   *    多个请求同时在飞，谁先返回谁就写 items.value —— 慢的旧请求会覆盖新数据，
+   *    界面显示上一个孩子的课程。
+   *    现在每次 refresh 领一个号，只有最新那次的响应才允许写 store。
+   */
+  let refreshSeq = 0
   async function refresh() {
     requireUid()
     const children = useChildrenStore()
     const cid = children.activeIdSafe
     if (!cid) { items.value = []; return }
+    const seq = ++refreshSeq
     // 客户端聚合 used_hours：先查本 child 的 courses，再查 checkins 汇总
     // 拆两条查询（单账号数据量小可接受）；后续可换 PG RPC 一条搞定
     const list = await businessApi<Array<Omit<Course, 'used_hours' | 'remain_hours' | 'price_per_hour'>>>(
       'GET',
       `/b/courses?child_id=${encodeURIComponent(cid)}&order=paid_at&asc=false`,
     )
+    // 已有更新的 refresh 在飞 → 本次结果作废（不能写 store）
+    if (seq !== refreshSeq) return
     if (list.length === 0) { items.value = []; return }
 
     // 拉 checkins 聚合
@@ -115,6 +127,7 @@ export const useCoursesStore = defineStore('courses', () => {
       'GET',
       `/b/checkins?select=course_id,hours&child_id=${encodeURIComponent(cid)}`,
     )
+    if (seq !== refreshSeq) return
     const usedMap = new Map<string, number>()
     for (const r of checkinRows) {
       usedMap.set(r.course_id, (usedMap.get(r.course_id) ?? 0) + Number(r.hours))

@@ -190,13 +190,14 @@ onMounted(() => {
         <div class="h-80">
           <CostPieChart
             :rows="pieRows"
+            :center-label="isAllTime ? '已消耗（折算）' : '期间折算'"
             :empty-title="hasFilteredData ? '' : (isAllTime ? '还没有课程数据' : '该时段无打卡数据')"
             :empty-desc="hasFilteredData ? '' : (isAllTime ? '添加课程后会按缴费金额占比展示' : (isCustomRange ? '调整日期范围或到「打卡」页补录' : '试试「全部」或换一个时间段'))"
           />
         </div>
         <p class="mt-2 text-center text-xs text-dark-soft">
           <template v-if="isAllTime">
-            总投入 {{ formatMoney(courses.totalAmount) }}
+            总投入 {{ formatMoney(courses.totalAmount) }}（实际缴费）
           </template>
           <template v-else>
             期间内折算 {{ formatMoney(periodStats.amount) }}（{{ periodStats.hours }} 节）

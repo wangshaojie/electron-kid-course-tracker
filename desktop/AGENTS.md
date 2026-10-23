@@ -84,7 +84,7 @@ src/
 | 操作 | 剩余课时 | 实现位置 |
 |---|---|---|
 | 新增课程 | `+total_hours` | `courses.create` |
-| 新增打卡 | `-hours`（**禁止剩余为负**） | `checkins.create`：客户端预校验 + DB CHECK 兜底 |
+| 新增打卡 | `-hours`（**禁止剩余为负**） | `checkins.create`：客户端预校验 + DB 触发器兜底 |
 | 删除打卡 | `+hours`（回滚） | `checkins.remove` + `courses.refresh` |
 | 删除课程 | 该课程下所有打卡先级联删 | UI 层 + 客户端 `courses.remove` 触发 `checkins.refresh` |
 
@@ -117,6 +117,10 @@ src/
 
 **前端封装**：`lib/cloudbase.ts` 的 `businessApi()` / `otpSend()` / `otpVerify()` 等。**不要直接 fetch URL**。
 
+**会话失效**：JWT 过期时 `getActiveJwt()` 会清掉存储并触发 `onSessionExpired` 回调 →
+auth store 自动登出 → `App.vue` watch `isAuthenticated` 变 false → `router.replace('/login')`。
+**不要**在 lib 层直接操作 store（会循环依赖），只通过回调通知。
+
 ## 7. 主题系统（v0.4.6 新增）
 
 3 档：**dark** / **light** / **system**
@@ -127,11 +131,17 @@ src/
 - `persistRemote()` best-effort 写云端，失败打 warn 不影响 UI
 - 启动早期 `main.ts` 直接调 `applyTheme()` 走 localStorage，避免闪屏
 - 登录后 / uid 变化时从 `user_prefs.theme` 同步过来（多设备一致）
+- **云端 theme 为 NULL = "用户还没选过"**（migration 20261024093000 起）：
+  - 读到 NULL → **保留本地选择**（不覆盖）；读到 dark/light/system → 以云端为准
+  - 本地是显式选择（dark/light）且云端为 NULL → 把本地写回云端，让其它设备同步到
+  - ⚠️ 列默认值必须是 NULL：默认值 'system' 会被当成"用户的明确选择"，把本地 dark/light 覆盖掉
 
 **`stores/theme.ts` capability 检测**：
 
 - 远端可用 → 正常读/写
 - 远端不可用（列不存在 / 400 / PG 42703） → 静默降级为只本地，后续不再尝试
+  - 判定靠错误对象上的 `code === 'unknown_column'`（服务端对 42703 统一回这个 code，**不回显列名**）
+  - ⚠️ 所以 `businessApi` 抛的 Error 必须保留 `code` / `detail`，别只 `throw new Error(中文)`
 - console.warn **只打一次**（`_remoteAvailable` 永久置 false 防止刷屏）
 
 **颜色**：
@@ -164,7 +174,7 @@ src/
 
 1. 所有删除 = `dangerousConfirm` 二次确认（输入关键字）
 2. 金额 / 课时必须 > 0（表单 validators + DB CHECK 双重保险）
-3. 课时扣减禁止变负（应用层 + SQL CHECK）
+3. 课时扣减禁止变负（客户端预校验 + **DB 触发器** `enforce_course_hours_limit`）
 4. 业务表 owner_id 必须等于 self uid（store 内强制 .eq 过滤 + 服务端二次注入）
 5. 切换账号必须清空 children/courses/checkins store（见 `../AGENTS.md` §4.3）
 6. **不弹广告**、**不引导付费**、**不收集遥测**
@@ -173,6 +183,8 @@ src/
 9. **Electron 二进制** 走 npmmirror：`$env:ELECTRON_MIRROR='https://npmmirror.com/mirrors/electron/'`
 10. **卸载可选清除本地数据** 实现在 `build/installer.nsh`：卸载欢迎页复选框（默认不勾），勾选才删 `%APPDATA%\course-tracker`（详见 `../AGENTS.md` §8）；改此文件必须保持 UTF-8 BOM
 11. **package.json 必显式补 `repository` 字段**（v0.4.5 CI 修复，electron-builder NSIS 写 `latest.yml` 必需）
+12. **异步刷新必须带代次守卫**：store 的 `refresh()` 领号（`refreshSeq`），只有最新一次的结果能写 store；快速切孩子 / 切账号时慢的旧响应会覆盖新数据
+13. **错误对象保留 code/detail**：`businessApi` 抛 `BusinessApiError`（message=中文，code/status/detail=诊断用）
 
 ## 10. 验收清单
 

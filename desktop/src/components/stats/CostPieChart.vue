@@ -17,11 +17,21 @@ const props = withDefaults(
     rows?: Array<{ name: string; value: number }>
     emptyTitle?: string
     emptyDesc?: string
+    /**
+     * 圆心金额上方的标签
+     * --------------------------------------------------------------
+     * ⚠️ 之前硬编码「总投入」，但饼图里的金额是**按课时折算**的已消耗金额
+     *    （打卡小时数 × 课程单价），和页脚那个「总投入 = 实际缴费总额」不是一个数。
+     *    同屏两个「总投入」两个算法 → 用户以为数据对不上。
+     *    现在标签由父组件按语境传入，「总投入」一词只留给实际缴费总额。
+     */
+    centerLabel?: string
   }>(),
   {
     rows: () => [],
     emptyTitle: '还没有课程数据',
     emptyDesc: '',
+    centerLabel: '折算投入',
   },
 )
 
@@ -61,7 +71,7 @@ const option = computed(() => {
         left: '32%',
         top: '46%',
         style: {
-          text: '总投入',
+          text: props.centerLabel,
           fill: c.textSoft,
           fontSize: 12,
         },

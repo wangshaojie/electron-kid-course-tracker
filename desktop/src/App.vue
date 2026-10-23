@@ -8,7 +8,7 @@
  * （App.vue 在登录时已经挂载，onMounted 不会再跑）
  */
 import { onMounted, onUnmounted, computed, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import AppLayout from '@/components/common/AppLayout.vue'
 import UpdateDialog from '@/components/common/UpdateDialog.vue'
@@ -26,6 +26,7 @@ import zhCn from 'element-plus/es/locale/lang/zh-cn'
 import { errorText } from '@/utils/error'
 
 const route = useRoute()
+const router = useRouter()
 const auth = useAuthStore()
 const db = useDBStore()
 const children = useChildrenStore()
@@ -114,6 +115,17 @@ async function loadBusinessData() {
 }
 
 /**
+ * 加载失败后的重试
+ * --------------------------------------------------------------
+ * 之前 initError 只写进 ref 从不渲染 → 加载失败时页面看起来像"数据被清空了"，
+ * 用户完全不知道发生了什么，只能杀进程重开。现在错误卡片上带"重新加载"按钮。
+ */
+function retryLoad() {
+  initError.value = null
+  void loadBusinessData()
+}
+
+/**
  * 版本更新：状态机 + IPC 监听都在 stores/update.ts，UI 在 UpdateDialog.vue。
  *  发现新版本 → 确认框（立即更新 / 稍后再说）
  *  → 下载进度弹框（百分比 / 大小 / 速度）
@@ -142,11 +154,16 @@ onUnmounted(() => {
 })
 
 // 登录态从 false 变 true（用户刚登录）→ 重新加载业务数据
+// 登录态从 true 变 false（token 过期被自动登出 / 主动退出）→ 回登录页
 watch(
   () => auth.isAuthenticated,
   (now, prev) => {
     if (now && !prev) {
       void loadBusinessData()
+    } else if (!now && prev) {
+      // ⚠️ 不跳登录页的话，AppLayout 会被 v-else-if 卸掉，只剩一个 boot-splash 黑屏，
+      //    用户既看不到错误也点不到"重新登录"。
+      void router.replace('/login')
     }
   },
 )
@@ -179,6 +196,16 @@ watch(
           <div class="loading-orb">🌱</div>
           <p class="loading-title">正在同步你的数据…</p>
           <p class="loading-sub">宝贝档案 · 课程 · 打卡记录</p>
+        </div>
+      </div>
+
+      <!-- 加载失败：必须显式告诉用户 + 给重试入口，否则看起来像"数据被清空" -->
+      <div v-else-if="initError" class="content-splash">
+        <div class="glass-card content-loading-card">
+          <div class="loading-orb error-orb">⚠️</div>
+          <p class="loading-title">数据加载失败</p>
+          <p class="loading-sub error-text">{{ initError }}</p>
+          <el-button type="primary" class="retry-btn" @click="retryLoad">重新加载</el-button>
         </div>
       </div>
 
@@ -251,6 +278,23 @@ watch(
   margin: 0;
   font-size: 12px;
   color: var(--text-soft);
+}
+
+/* 加载失败卡片：错误色 orb + 可读的错误文案 + 重试按钮 */
+.error-orb {
+  background: linear-gradient(135deg, rgba(224, 138, 30, 0.28) 0%, rgba(224, 138, 30, 0.1) 100%);
+  border-color: rgba(224, 138, 30, 0.35);
+}
+
+.error-text {
+  max-width: 420px;
+  text-align: center;
+  line-height: 1.6;
+  color: var(--text-body);
+}
+
+.retry-btn {
+  margin-top: 4px;
 }
 
 @keyframes splash-card-in {

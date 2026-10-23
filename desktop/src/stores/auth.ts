@@ -28,6 +28,7 @@ import {
   getActiveJwt,
   persistSession,
   clearSession,
+  onSessionExpired,
   type SessionUser,
 } from '@/lib/cloudbase'
 
@@ -224,6 +225,22 @@ export const useAuthStore = defineStore('auth', () => {
     status.value = 'unauthenticated'
     clearSession()
   }
+
+  /**
+   * 会话失效（token 过期 / 被清）→ 自动登出
+   * --------------------------------------------------------------
+   * lib/cloudbase 在 getActiveJwt() 发现 token 过期、或 dataApi 拿不到可用 JWT 时回调。
+   * 不处理的话：storage 里的 token 被清了，但内存里的 token ref 还在，
+   * isAuthenticated 仍是 true → 界面停在业务页只是数据全空，
+   * 用户找不到"重新登录"的入口（watch 也永远不会触发），只能杀进程重开。
+   *
+   * 登出后 isAuthenticated 变 false，App.vue 的 watch 会自动跳回 /login。
+   */
+  onSessionExpired((reason) => {
+    if (status.value !== 'authenticated') return
+    void signOut()
+    ElMessage.warning(reason === 'token_expired' ? '登录状态已过期，请重新登录' : '登录状态已失效，请重新登录')
+  })
 
   return {
     user,

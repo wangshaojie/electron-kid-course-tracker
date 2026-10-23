@@ -225,6 +225,9 @@ kid-course-tracker/
 │       ├── 20260908000003_daily_backup_cron.sql   ← pg_cron + backup_snapshot()
 │       ├── 20260909140000_user_prefs_theme.sql    ← user_prefs 加 theme 列
 │       ├── 20260909173709_fix_email_otps_seq.sql  ← 修 email_otps 序列不同步
+│       ├── 20261023153000_enforce_course_hours_limit.sql ← 累计课时触发器
+│       ├── 20261023153100_revoke_backup_snapshot_public.sql ← backup_snapshot 收权
+│       ├── 20261024093000_user_prefs_theme_nullable.sql   ← theme 可空（NULL=未选）
 │       └── ...
 │
 ├── desktop/                 ← 桌面端
@@ -344,6 +347,24 @@ kid-course-tracker/
 - 数据库层 RLS 已开启 + anon policy/权限已删（migration 20260817000000），anon 直连 PostgREST 一律被拒；data-api 用 service role（BYPASSRLS）不受影响
 - 课时扣减：客户端预校验（used + hours > total 报错） + **数据库触发器**（`enforce_course_hours_limit`，migration 20261023153000）
 - 激活孩子同步：见 `stores/children.ts` → `data-api /b/user_prefs`（PATCH 无 id = upsert）
+- **user_prefs upsert 用 `INSERT ... ON CONFLICT (owner_id) DO UPDATE`**（migration 20261024093000 起）：
+  - `DO UPDATE` 只 SET 本次请求**真正带了的列** → 写 `active_child_id` 不会动 `theme`，写 `theme` 不会动 `active_child_id`
+  - 必须是原子 upsert，不能"先 SELECT 再 UPDATE/INSERT"：两个字段并发写时都会判定"行不存在"→ 双 INSERT 主键冲突
+  - 只有 `user_prefs`（pk = owner_id）支持不带 id 的 upsert，其它表走这条路径返回 400 `bad_query`
+- **主题语义：`user_prefs.theme` 可空，NULL = "用户还没选过"**
+  - 列默认值是 NULL（不是 'system'）：新建行不再伪造一个用户没选过的 'system'
+  - `syncFromCloud()` 读到 NULL → **保留本地**；读到明确值（dark/light/system）→ 以云端为准
+  - 本地是显式选择（dark/light）且云端为 NULL → 把本地写回云端做多设备同步
+- **token 过期自动登出**：`getActiveJwt()` 发现过期 → 清存储 + 触发 `onSessionExpired` 回调 → auth store 登出 → App.vue watch `isAuthenticated` 变 false → `router.replace('/login')`
+- **错误对象约定**：`businessApi` 抛的是 `BusinessApiError`（`Error` + `code` / `status` / `detail`）
+  - `message` = 中文文案，给用户看
+  - `code` = 后端 error code（`db_error` / `unknown_column` / `course_hours_exceeded` …），给诊断逻辑用
+  - ⚠️ 别再把原始报错直接 `throw new Error(中文)` 丢掉 code/detail —— 之前 `theme.ts` 的"云端列缺失 → 永久降级"就是因此变成死代码
+  - 服务端 PG 42703（列不存在）统一回 `400 unknown_column`（**不回显列名**，避免泄露 schema）
+- **store 刷新增代次守卫**：`courses.refresh()` / `checkins.refresh()` 各自持 `refreshSeq`，
+  只有最新一次 refresh 的响应才允许写 store —— 快速切换宝贝时慢的旧请求不会覆盖新数据
+- **打卡必须校验课程归属当前宝贝**：`checkins.create()` 检查 `course.child_id === 当前孩子`，
+  不一致直接拒绝（避免弹窗开着时切了宝贝 → 写出"课程和孩子对不上"的脏数据）
 
 ### 4.3 切换账号不残留（重要！）
 
@@ -351,6 +372,11 @@ App.vue 有三件套：
 1. `resetBusinessState()`：load 前清空 children/courses/checkins store + `kid_active_child_id` LS
 2. `watch(auth.user?.uid)`：uid 变就强制重载（覆盖"不退出直接换邮箱"）
 3. `loadingPromise` 单飞锁：onMounted + watch 同时触发只跑一次
+   - ⚠️ 必须带 **uid 快照 + 代次**（`loadingUid` / `loadGeneration`）：
+     - 同 uid 的并发触发 → 复用同一次加载
+     - 不同 uid（换账号）→ **等旧的彻底跑完再重跑**，不能 `return loadingPromise` 直接丢弃
+       （丢弃 = 新账号数据永远不加载，界面显示上一个账号的数据，还可能写出孤儿行）
+     - 只有最新代次能写 `initializing` / `initError`
 
 `apply when`: Pinia + 鉴权 store + 多业务 store 互相依赖，账号切换时套这套。
 
@@ -432,7 +458,7 @@ pnpm exec electron dist-electron/main.mjs --open-devtools
 | `courses` | 课程（total_hours/paid_at/expires_at） |
 | `checkins` | 打卡（hours/feedback） |
 | `email_otps` | OTP 临时记录（hash + salt + attempts + ip） |
-| `user_prefs` | 账号偏好（owner_id PK + active_child_id） |
+| `user_prefs` | 账号偏好（owner_id PK + active_child_id + theme，theme 可空=未选择） |
 | `user_passwords` | 可选密码登录（email PK + scrypt 哈希） |
 
 ### 6.2 字段约定
@@ -549,6 +575,11 @@ pnpm release 1.2.3                   # 直跳指定版本
 - **Vite + Vue Router + 异步 auth bootstrap** —— `router.isReady()` 只 await 第一次 beforeEach。如果 `auth.status === 'bootstrapping'` 时守卫放行，isReady 立刻 resolve，之后 bootstrap 改 status 没人再触发 redirect。`main.ts` 必须在 `await router.isReady()` 后主动 `router.replace` 纠偏。
 
 - **Vercel Function + postgres.js：max:1 + Promise.all = 300s 超时** —— `vercel/lib/db.js` 默认 `max: 1`；handler 内 `Promise.all` 跑多段 sql.query 看似并发，**实际客户端侧排队串行**（同 client 拿不到 2 条连接）。若一个 handler 跑 2+ 段 SQL，**把 `max` 调到 4-5**（postgres.js 文档推荐；事务模式 pooler :6543 仍 OK）。现象：浏览器侧 (待处理) 一直挂，Vercel 日志 `Task timed out after 300 seconds`。详见 agent memory。
+
+- **postgres.js `max:1` + 事务里用池连接 = 永久挂死** —— `sql.begin(async (tx) => { ... })` 已经占住唯一那条连接，
+  事务回调里再用外层 `sql` / `sql.query` 发起查询 → 池里没有空闲连接 → 无限等待（本地实测直接挂住）。
+  **事务内所有查询必须用 `tx`（`tx\`...\`` / `tx.unsafe(text, params)`）**，`sql.query` 只在事务外用。
+  写"事务内验证脚本"时最容易踩：写完 `sql.query(...)` 而不是 `tx.unsafe(...)`。
 
 - **Supabase 事务模式 pooler (port 6543) + 跨实例并发** —— 多个 Vercel Function 实例同时跑，每个实例各拿一条 pooler 连接。pooler 分配/释放延迟叠加 + pool 内慢查询会瞬间占满 → 实例排队等连接 → 300s。修法：(1) `max: 1` 调大；(2) 前端不要 `Promise.allSettled([4 个接口])` 一次性打，改成"按 tab 懒加载"；(3) `email_otps` 等大表加部分索引。详见 agent memory。
 

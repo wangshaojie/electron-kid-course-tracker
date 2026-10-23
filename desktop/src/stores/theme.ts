@@ -7,6 +7,9 @@
  *   system - 跟随操作系统 prefers-color-scheme
  *
  * 持久化: 写云端 user_prefs.theme(best-effort),本地 localStorage 'app.theme' 做兜底
+ *   - 云端 theme 为 NULL = "用户还没选过"(migration 20261024093000 起),
+ *     读到 NULL 时保留本地选择,不会把本地显式选择覆盖掉
+ *   - 本地是显式选择(dark/light)且云端没值时,会把本地选择写回云端做多设备同步
  *  应用:   设置 <html data-theme="..."> 让 theme.css 切换
  *   - 'dark' / 'light' → 显式设 data-theme
  *   - 'system'         → 不设 data-theme,让 @media (prefers-color-scheme) 接管
@@ -131,7 +134,12 @@ export const useThemeStore = defineStore('theme', () => {
     }
   }
   function _isRemoteColMissing(e: unknown): boolean {
-    // businessApi 错误格式: { error: 'db_error' | 'bad_query' | 'not_found' | 'internal', detail: string }
+    // ⚠️ 优先看 error code：服务端对 PG 42703（列不存在）统一回
+    //    { error: 'unknown_column' }，**不回显列名**（避免泄露 schema），
+    //    所以不能再靠 detail 里出现 "column ... does not exist" 来判断。
+    const code = String((e as any)?.code || '')
+    if (code === 'unknown_column') return true
+    // 兼容旧服务端 / 其它错误形态
     const msg = String((e as any)?.detail || (e as any)?.message || e || '')
     return (
       msg.includes('theme') ||
@@ -143,7 +151,9 @@ export const useThemeStore = defineStore('theme', () => {
   /**
    * 读云端 user_prefs.theme 并同步到本地
    * - 调用场景: 登录后 / uid 变化时(从 App.vue 触发)
-   * - 没记录 / 读失败 → 保持本地 LS,不动
+   * - 云端有明确值(dark/light/system) → 以云端为准(多设备一致)
+   * - 云端没明确值(NULL / 没有行) → **保留本地**，并把本地显式选择写回云端
+   *   （NULL 语义 = "用户还没选过"；列默认值伪造的 'system' 已迁移成 NULL）
    * - 服务端字段类型是 'dark' | 'light' | 'system',其他值忽略
    * - 远端不可用(列不存在)→ 静默,后续不再尝试
    */
@@ -155,14 +165,22 @@ export const useThemeStore = defineStore('theme', () => {
         '/b/user_prefs?select=theme',
       )
       _remoteAvailable = true
-      const cloud = rows[0]?.theme
+      const cloud = rows[0]?.theme ?? null
       if (cloud && VALID_MODES.includes(cloud as ThemeMode)) {
+        // 云端有明确选择 → 以云端为准
         const next = cloud as ThemeMode
         if (next !== mode.value) {
           mode.value = next
           writeLS(next)
           applyTheme()
         }
+        return
+      }
+      // 云端没有明确选择（NULL / 没有行）→ 保留本地。
+      // 本地是显式选择(dark/light)时把它写回云端，让其它设备能同步到；
+      // 本地是 'system' 时不写（写上去也只是把"跟随系统"固化，没意义）。
+      if (mode.value !== 'system') {
+        await persistRemote(mode.value)
       }
     } catch (e) {
       if (_isRemoteColMissing(e)) _markRemoteUnavailable()

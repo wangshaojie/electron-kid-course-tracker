@@ -214,6 +214,35 @@ function readJwtExp(token: string): number | null {
   }
 }
 
+// ==================== 会话失效通知（token 过期 → 跳登录页）===================
+
+/**
+ * 会话失效回调注册
+ * --------------------------------------------------------------
+ * 之前 token 过期只做了一件事：getActiveJwt() 把 storage 里的 token 删掉。
+ * 但 auth store 内存里的 token ref 还在，isAuthenticated 仍然是 true，
+ * 界面停在业务页，只是所有请求 401 —— 用户看得见"数据没了"却找不到重新登录的入口，
+ * 只能杀进程重开（而且重开还是过期，要再登一次）。
+ *
+ * 现在统一走这个回调：lib 层只负责"发现没 token 了"，
+ * 具体怎么清登录态 / 怎么跳登录页由 auth store 决定（避免 lib ↔ store 循环依赖）。
+ */
+export type SessionExpiredHandler = (reason: 'token_expired' | 'no_active_jwt') => void
+let _sessionExpiredHandler: SessionExpiredHandler | null = null
+
+/** 注册会话失效回调（auth store 在创建时注册一次） */
+export function onSessionExpired(cb: SessionExpiredHandler | null) {
+  _sessionExpiredHandler = cb
+}
+
+function notifySessionExpired(reason: 'token_expired' | 'no_active_jwt') {
+  try {
+    _sessionExpiredHandler?.(reason)
+  } catch (e) {
+    console.warn('[auth] session expired handler failed', e)
+  }
+}
+
 /** 拿当前 JWT（自己签的），没登录或已过期返回 null */
 export function getActiveJwt(): string | null {
   const raw = localStorage.getItem(JWT_KEY) ?? sessionStorage.getItem(JWT_KEY)
@@ -231,6 +260,8 @@ export function getActiveJwt(): string | null {
   if (exp && exp * 1000 < Date.now()) {
     // 已过期，清理
     try { localStorage.removeItem(JWT_KEY); sessionStorage.removeItem(JWT_KEY) } catch {}
+    // 通知上层：登录态已失效 → 登出 + 回登录页（否则用户卡在空数据界面）
+    notifySessionExpired('token_expired')
     return null
   }
   return t
@@ -513,7 +544,10 @@ type PasswordStatusResult =
 /** auth-otp 带 Bearer 的 POST（已登录改密码用） */
 async function postOtpAuth(path: string, body: Record<string, unknown>): Promise<{ status: number; json: any }> {
   const tok = getActiveJwt()
-  if (!tok) return { status: 401, json: { error: 'no_bearer' } }
+  if (!tok) {
+    notifySessionExpired('no_active_jwt')
+    return { status: 401, json: { error: 'no_bearer' } }
+  }
   let r: Response
   try {
     r = await fetchResilient(`${AUTH_OTP_URL}${path}`, {
@@ -532,7 +566,10 @@ async function postOtpAuth(path: string, body: Record<string, unknown>): Promise
 /** auth-otp 带 Bearer 的 GET（查询密码状态用） */
 async function getOtpAuth(path: string): Promise<{ status: number; json: any }> {
   const tok = getActiveJwt()
-  if (!tok) return { status: 401, json: { error: 'no_bearer' } }
+  if (!tok) {
+    notifySessionExpired('no_active_jwt')
+    return { status: 401, json: { error: 'no_bearer' } }
+  }
   let r: Response
   try {
     r = await fetchResilient(`${AUTH_OTP_URL}${path}`, {
@@ -593,6 +630,24 @@ export type DataApiResult<T> =
   | { ok: false; status: number; error: string; detail?: string }
 
 /**
+ * businessApi 抛出的错误对象
+ * --------------------------------------------------------------
+ * ⚠️ 之前 `throw new Error(translateDataApiError(...))` 只挂了中文文案，
+ *    原始 error code / detail 全丢了 → theme.ts 的 _isRemoteColMissing()
+ *    （靠 detail 里出现 "column ... does not exist" 判断"云端没这列"）变成死代码，
+ *    「theme 列不存在 → 永久降级为只本地」这条兜底永远不触发。
+ * 现在：message 给用户看（中文），code / status / detail 挂在对象上给诊断用。
+ */
+export interface BusinessApiError extends Error {
+  /** 后端 error code（如 db_error / unknown_column / course_hours_exceeded） */
+  code?: string
+  /** HTTP 状态码 */
+  status?: number
+  /** 后端原始 detail（不进用户界面，只进 console） */
+  detail?: string
+}
+
+/**
  * data-api 通用调用（GET/POST/PATCH/DELETE）
  * - 自动带 Authorization: Bearer <当前 JWT>
  * - 401/403/5xx 错误透传原文（业务 store 需要原文）
@@ -604,6 +659,8 @@ export async function dataApi<T = unknown>(
 ): Promise<DataApiResult<T>> {
   const tok = getActiveJwt()
   if (!tok) {
+    // 没有可用 JWT（未登录 或 token 已过期）→ 通知上层清理登录态并回登录页
+    notifySessionExpired('no_active_jwt')
     return { ok: false, status: 401, error: 'no_active_jwt' }
   }
   let r: Response
@@ -648,6 +705,8 @@ const DATA_API_ERROR_MAP: Record<string, string> = {
   not_found: '记录不存在或已被删除',
   method_not_allowed: '不支持的操作',
   empty_payload: '没有需要更新的内容',
+  // 服务端字段不存在（PG 42703）→ 客户端据此判断"云端还没这列"（如 user_prefs.theme）
+  unknown_column: '请求的字段不存在',
   // 累计课时超限（数据库触发器 enforce_course_hours_limit 抛的）
   course_hours_exceeded: '该课程剩余课时不足，不能再增加打卡',
   // 表级 CHECK 约束（金额/课时必须 > 0）
@@ -675,6 +734,9 @@ export function translateDataApiError(rawError: string | null | undefined, detai
 /**
  * 业务 API：失败直接 throw（store 保持现有 `throw error` 行为不变），
  * 成功返回后端响应体里的 data 载荷（即 { ok, data } 里的 data）
+ *
+ * ⚠️ 抛出的 Error 上必须挂 code / status / detail（见 BusinessApiError）：
+ *    UI 用 message（中文），诊断逻辑（如 theme 列缺失判定）用 code / detail。
  */
 export async function businessApi<T = unknown>(
   method: 'GET' | 'POST' | 'PATCH' | 'DELETE',
@@ -683,7 +745,11 @@ export async function businessApi<T = unknown>(
 ): Promise<T> {
   const r = await dataApi<{ ok: true; data: T }>(method, subPath, body)
   if (!r.ok) {
-    throw new Error(translateDataApiError(r.error, r.detail))
+    const err = new Error(translateDataApiError(r.error, r.detail)) as BusinessApiError
+    err.code = r.error
+    err.status = r.status
+    err.detail = r.detail
+    throw err
   }
   return r.data.data
 }
