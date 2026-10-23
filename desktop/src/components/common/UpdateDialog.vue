@@ -32,12 +32,22 @@ const speedText = computed(() =>
   update.progress.speed > 0 ? `${formatBytes(update.progress.speed)}/s` : '',
 )
 
-/** 下载完成后的说明（路径可能很长，单独一行省略显示） */
-const downloadedHint = computed(() =>
-  update.restarting
-    ? '应用已退出，安装界面马上弹出：按提示点「下一步 → 安装」，完成后会自动打开新版本。'
-    : '点击「立即重启并安装」后应用会退出，随后弹出安装界面（默认装回原目录），按提示完成安装即可，装完自动打开新版本。',
-)
+/**
+ * 下载完成后的说明
+ * ⚠️ 必须按安装形态分开说：NSIS 会弹安装向导，portable 是就地替换 exe。
+ *    之前两种形态都写"弹出安装界面…装完自动打开新版本"，
+ *    portable 用户点下去只看到程序闪一下就没了 → 判定更新失败。
+ */
+const downloadedHint = computed(() => {
+  if (update.activeMode === 'nsis') {
+    return update.restarting
+      ? '应用已退出，安装界面马上弹出：按提示点「下一步 → 安装」，完成后会自动打开新版本。'
+      : '点击「立即重启并安装」后应用会退出，随后弹出安装界面（默认装回原目录），按提示完成安装即可，装完自动打开新版本。'
+  }
+  return update.restarting
+    ? '应用已退出，正在替换程序并重新打开…'
+    : '点击「立即重启并安装」后应用会退出，新版本会替换当前程序并自动重新打开；若程序正被占用无法替换，则改为启动新下载的副本（原文件保持不变）。'
+})
 
 function formatBytes(n: number): string {
   if (!n || n < 0) return '0 B'

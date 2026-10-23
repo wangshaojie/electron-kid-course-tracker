@@ -20,11 +20,15 @@ import { app, BrowserWindow, net } from 'electron'
 import path from 'node:path'
 import fs from 'node:fs'
 import os from 'node:os'
+import crypto from 'node:crypto'
 import { spawn } from 'node:child_process'
 import https from 'node:https'
 
 const REPO = 'wangshaojie/electron-kid-course-tracker'
 const RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`
+/** 按 tag 精确取某个 release（下载时用，避免"latest 变了导致装到别的版本"） */
+const RELEASE_TAG_API = (tag: string) =>
+  `https://api.github.com/repos/${REPO}/releases/tags/${encodeURIComponent(tag)}`
 const LATEST_PAGE = `https://github.com/${REPO}/releases/latest`
 
 /** 下载安装包的超时（毫秒）—— 没有它，链路断流时会永远停在"正在下载" */
@@ -159,12 +163,85 @@ interface GhReleaseAsset {
   name: string
   browser_download_url: string
   size: number
+  /** GitHub 新版 release API 会带资产摘要，形如 "sha256:<hex>"（老版本没有这个字段） */
+  digest?: string
 }
 
 interface GhRelease {
   tag_name: string
   html_url: string
   assets: GhReleaseAsset[]
+}
+
+/** updater 的下载目录（装包落地位置） */
+export function updateTempDir(): string {
+  return path.join(os.tmpdir(), 'TimeWell-update')
+}
+
+/**
+ * 装包路径白名单
+ * --------------------------------------------------------------
+ * ⚠️ 之前 update:openLocalFile / update:restartAndInstall 直接把渲染端传来的
+ *    路径丢给 shell.openPath / spawn —— 等于"渲染端能让主进程执行磁盘上任意 exe"。
+ *    现在只认：
+ *      1) 落在 updater 自己的下载目录里（%TEMP%\TimeWell-update）
+ *      2) 文件名形如 TimeWell-*.exe
+ *      3) 文件确实存在
+ */
+export function isAuthorizedInstallerPath(p: string): boolean {
+  try {
+    if (typeof p !== 'string' || !p) return false
+    const dir = path.resolve(updateTempDir())
+    const full = path.resolve(p)
+    const rel = path.relative(dir, full)
+    // 必须真的在下载目录里（rel 不能以 .. 开头，也不能是绝对路径）
+    if (!rel || rel.startsWith('..') || path.isAbsolute(rel)) return false
+    const base = path.basename(full).toLowerCase()
+    if (!base.startsWith('timewell-') || !base.endsWith('.exe')) return false
+    return fs.existsSync(full)
+  } catch {
+    return false
+  }
+}
+
+/**
+ * 清理旧的更新文件
+ * --------------------------------------------------------------
+ * 装包下载到 %TEMP%\TimeWell-update 后会一直躺在那儿（几十上百 MB），
+ * 用户又看不见也没法删。现在启动时把超过 7 天的旧 .exe / .bat 清掉
+ * （只删这个 updater 自己的目录，绝不碰别处）。
+ */
+export function cleanupOldUpdateFiles(maxAgeMs = 7 * 24 * 3600 * 1000): void {
+  try {
+    const dir = updateTempDir()
+    if (!fs.existsSync(dir)) return
+    const now = Date.now()
+    for (const name of fs.readdirSync(dir)) {
+      if (!/\.(exe|bat)$/i.test(name)) continue
+      const full = path.join(dir, name)
+      try {
+        const st = fs.statSync(full)
+        if (now - st.mtimeMs > maxAgeMs) {
+          fs.unlinkSync(full)
+        }
+      } catch { /* ignore */ }
+    }
+  } catch { /* ignore */ }
+}
+
+/** 计算文件 SHA-256（流式，不把大 exe 整个读进内存） */
+function sha256File(file: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    try {
+      const h = crypto.createHash('sha256')
+      const s = fs.createReadStream(file)
+      s.on('data', (c) => h.update(c))
+      s.on('error', reject)
+      s.on('end', () => resolve(h.digest('hex')))
+    } catch (e) {
+      reject(e instanceof Error ? e : new Error(String(e)))
+    }
+  })
 }
 
 async function fetchLatestRelease(currentOverride?: string): Promise<UpdateInfo | null> {
@@ -220,19 +297,22 @@ function emit(event: string, payload: unknown) {
 
 /* ========== 统一通道：手写 https 下载 .exe 到 %TEMP% ========== */
 
+/**
+ * 按**精确文件名**挑 asset
+ * --------------------------------------------------------------
+ * ⚠️ 之前有模糊兜底（name.includes('portable') && endsWith('.exe')）：
+ *    release 里一旦多出别的 .exe（例如临时上传的调试包），
+ *    就可能挑到跟提示版本对不上的文件 → 用户装了个"不知道是什么版本"。
+ *    现在只认 electron-builder 的标准命名，找不到就报错让用户去 GitHub 手动下。
+ */
 function pickPortableAsset(release: GhRelease, version: string): GhReleaseAsset | null {
-  // 命名规则：TimeWell-${version}-portable-x64.exe
   const targetName = `TimeWell-${version}-portable-x64.exe`
-  return release.assets.find((a) => a.name === targetName)
-    ?? release.assets.find((a) => a.name.includes('portable') && a.name.endsWith('.exe'))
-    ?? null
+  return release.assets.find((a) => a.name === targetName) ?? null
 }
 
 function pickNsisInstallerAsset(release: GhRelease, version: string): GhReleaseAsset | null {
   const targetName = `TimeWell-${version}-x64.exe`
-  return release.assets.find((a) => a.name === targetName)
-    ?? release.assets.find((a) => a.name.endsWith('.exe') && !a.name.includes('portable') && !a.name.includes('blockmap'))
-    ?? null
+  return release.assets.find((a) => a.name === targetName) ?? null
 }
 
 function downloadFile(url: string, dest: string, onProgress?: (downloaded: number, total: number) => void): Promise<number> {
@@ -316,16 +396,27 @@ function downloadFile(url: string, dest: string, onProgress?: (downloaded: numbe
 /** portable 模式：直接下 .exe 到 %TEMP%，进度推给渲染端，下载完推 path 让它弹"立即打开" */
 export async function startManualDownload(info: UpdateInfo, mode: 'portable' | 'fallback'): Promise<void> {
   try {
-    // 重新查 release 拿 assets 列表（之前 UpdateInfo 只有 url）
-    const api = await httpGet(RELEASE_API)
-    if (!api || api.status !== 200) throw new Error(`release API HTTP ${api?.status ?? '无响应'}`)
+    // ⚠️ 按 **提示给用户的那个 tag** 精确取 release，不要再拉 /releases/latest：
+    //    检查更新之后如果作者又发了新版本，latest 会指向另一个 release，
+    //    模糊匹配就可能装到跟提示不一致的版本。
+    const tag = info.tag || `v${info.version}`
+    const api = await httpGet(RELEASE_TAG_API(tag))
+    if (!api || api.status !== 200) {
+      throw new Error(`找不到 release ${tag}（HTTP ${api?.status ?? '无响应'}），请去 GitHub 手动下载`)
+    }
     const release: GhRelease = JSON.parse(api.body)
+    // 双保险：release 的 tag 必须和提示的一致
+    if (release.tag_name && release.tag_name !== tag) {
+      throw new Error(`release 版本对不上（期望 ${tag}，实际 ${release.tag_name}），已中止下载`)
+    }
     const asset = mode === 'portable'
       ? pickPortableAsset(release, info.version)
       : pickNsisInstallerAsset(release, info.version)
-    if (!asset) throw new Error('release 里没找到对应的 .exe asset')
+    if (!asset) {
+      throw new Error(`release ${tag} 里没有 ${info.version} 的安装包（命名不匹配），请去 GitHub 手动下载`)
+    }
 
-    const destDir = path.join(os.tmpdir(), 'TimeWell-update')
+    const destDir = updateTempDir()
     fs.mkdirSync(destDir, { recursive: true })
     const dest = path.join(destDir, asset.name)
 
@@ -337,6 +428,28 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
         total: t,
       })
     })
+
+    // ---- 完整性校验（P2 #17）----
+    // ① 大小对不上 → 传输被截断/代理改了内容
+    if (asset.size && total !== asset.size) {
+      try { fs.unlinkSync(dest) } catch { /* ignore */ }
+      throw new Error(`下载文件大小不符（期望 ${asset.size} 字节，实际 ${total} 字节），请重试`)
+    }
+    // ② GitHub 给了摘要就逐字节校验（sha256）
+    //    老版本 API 不带 digest 字段 → 跳过（但大小校验仍然生效）
+    if (asset.digest) {
+      const m = /^sha256:([0-9a-f]{64})$/i.exec(asset.digest.trim())
+      if (m) {
+        const actual = await sha256File(dest)
+        if (actual.toLowerCase() !== m[1].toLowerCase()) {
+          try { fs.unlinkSync(dest) } catch { /* ignore */ }
+          throw new Error('下载文件校验不通过（SHA-256 不匹配），请重试或去 GitHub 手动下载')
+        }
+        console.log(`[updater:manual] SHA-256 校验通过 (${actual.slice(0, 16)}…)`)
+      }
+    } else {
+      console.log('[updater:manual] release 未提供 digest，跳过 SHA-256 校验（已完成大小校验）')
+    }
 
     emit('update:downloaded', {
       version: info.version,
@@ -385,8 +498,8 @@ export async function startManualDownload(info: UpdateInfo, mode: 'portable' | '
  *     · /wait     —— 只为等安装器结束、把退出码写进 restart.log
  *                     （0=装完，1602/1223=用户取消/拒绝 UAC），便于售后排查
  *
- *   portable：直接 start 下载好的新版 portable exe（绿色版不覆盖旧文件，
- *             用户自行替换即可）
+ *   portable：把新版本就地替换掉当前 exe 再启动（绿色版没有安装器，
+ *             不替换的话用户原来的那份永远是旧版）
  *
  * ★ 必须带 windowsVerbatimArguments: true（v0.5.9 修的坑）：
  *   Node 在 Windows 上拼子进程命令行时会把参数里的 " 转义成 \" 并在外层再包一层
@@ -459,7 +572,15 @@ export function restartAndInstall(
 
     // NSIS 升级：sleep 等当前进程退干净 → 弹安装向导（--updated，不带 /S）
     //           → 用户点"完成"，由安装器的完成页勾选项拉起新版本
-    // portable 升级：sleep → 直接 start 下载好的新版绿色版（不替换旧文件，用户自行覆盖）
+    // portable 升级：sleep → **把新版本就地替换掉当前 exe** → 启动新版本
+    //           （旧行为只是从 %TEMP% 启动一份新 exe，用户原来的那份完全没变，
+    //            快捷方式还指向旧版本 → 用户判定"更新失败"。
+    //            现在的顺序刻意是「先 copy 再 move」，任何一步失败都能退回
+    //            「至少能跑起来」的状态，不会把用户搞到 exe 都没了的地步：
+    //              copy 失败   → 直接跑 %TEMP% 里那份
+    //              move 失败   → 跑旁边的 .new.exe（原 exe 还在，快捷方式不失效）
+    //              换位失败   → 先把原 exe 还原，再跑 .new.exe
+    //            全部成功     → 原路径就是新版本，快捷方式自动指向新版本)
     //
     // 装包路径走环境变量 TW_SETUP 而不是 argv：
     //   argv 传路径会踩 cmd /c 的引号剥离规则（%1 错位 / 含空格路径被截断），
@@ -481,7 +602,31 @@ export function restartAndInstall(
       : batCommon
         + 'echo bat(portable) start >> "%~dp0restart.log"\r\n'
         + 'if not exist "%TW_SETUP%" echo ERROR setup missing >> "%~dp0restart.log"\r\n'
-        + 'start "" "%TW_SETUP%"\r\n'
+        + 'set "TW_OLD=%TW_SELF%.old-%RANDOM%"\r\n'
+        // ① 先把新版本 copy 到当前 exe 旁边（不占用当前 exe 的文件锁）
+        + 'copy /Y "%TW_SETUP%" "%TW_SELF%.new.exe" >> "%~dp0restart.log" 2>&1\r\n'
+        + 'if not exist "%TW_SELF%.new.exe" (\r\n'
+        + '  echo ERROR copy new exe failed, start temp copy >> "%~dp0restart.log"\r\n'
+        + '  start "" "%TW_SETUP%"\r\n'
+        + '  goto :eof\r\n'
+        + ')\r\n'
+        // ② 当前 exe 改名让位（改名失败 = 文件还被占用 → 退回跑 .new.exe）
+        + 'move /Y "%TW_SELF%" "%TW_OLD%" >> "%~dp0restart.log" 2>&1\r\n'
+        + 'if not exist "%TW_OLD%" (\r\n'
+        + '  echo ERROR old exe locked, start new copy >> "%~dp0restart.log"\r\n'
+        + '  start "" "%TW_SELF%.new.exe"\r\n'
+        + '  goto :eof\r\n'
+        + ')\r\n'
+        // ③ 新版本就位
+        + 'move /Y "%TW_SELF%.new.exe" "%TW_SELF%" >> "%~dp0restart.log" 2>&1\r\n'
+        + 'if not exist "%TW_SELF%" (\r\n'
+        + '  echo ERROR inplace move failed, restore old exe >> "%~dp0restart.log"\r\n'
+        + '  move /Y "%TW_OLD%" "%TW_SELF%" >> "%~dp0restart.log" 2>&1\r\n'
+        + '  start "" "%TW_SELF%.new.exe"\r\n'
+        + '  goto :eof\r\n'
+        + ')\r\n'
+        + 'echo portable replaced in place >> "%~dp0restart.log"\r\n'
+        + 'start "" "%TW_SELF%"\r\n'
 
     // 写 .bat：内容纯 ASCII，编码用 UTF-8 即可（不含中文，不依赖 .bat 编码）
     fs.writeFileSync(batPath, batBody, { encoding: 'utf8' })
@@ -499,9 +644,8 @@ export function restartAndInstall(
       stdio: 'ignore',
       windowsHide: true,
       windowsVerbatimArguments: true,
-      // 只传装包路径；装完由安装器自己拉起新版本（见文件头 NSIS 说明），
-      // 所以 bat 里没有、也不需要"当前 exe"这个概念
-      env: { ...process.env, TW_SETUP: localPath },
+      // TW_SETUP = 新版装包路径；TW_SELF = 当前 exe 路径（portable 分支要就地替换它）
+      env: { ...process.env, TW_SETUP: localPath, TW_SELF: process.execPath },
     }).unref()
 
     // 给渲染端留一点时间收到 { ok } 并显示"正在重启…"，然后退出

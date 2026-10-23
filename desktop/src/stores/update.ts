@@ -57,7 +57,7 @@ export const useUpdateStore = defineStore('update', () => {
   const busy = computed(() => phase.value === 'preparing' || phase.value === 'downloading')
 
   /** 当前安装形态：nsis 装包 / portable 绿色版（决定重启安装怎么走） */
-  let activeMode: 'nsis' | 'portable' = 'portable'
+  const activeMode = ref<'nsis' | 'portable'>('portable')
   /** 进度节流用（主进程回调频率很高，直接刷 ref 会打满渲染） */
   let lastProgressAt = 0
   let speedSample: { at: number; bytes: number } | null = null
@@ -204,7 +204,7 @@ export const useUpdateStore = defineStore('update', () => {
       ElMessage.warning('当前环境不支持自动更新')
       return
     }
-    activeMode = info.mode === 'nsis' ? 'nsis' : 'portable'
+    activeMode.value = info.mode === 'nsis' ? 'nsis' : 'portable'
     targetVersion.value = info.version
     errorMessage.value = ''
     errorUrl.value = info.url ?? ''
@@ -217,7 +217,7 @@ export const useUpdateStore = defineStore('update', () => {
     dialogVisible.value = true
 
     // 'fallback' = 让主进程按 NSIS installer asset 取包（历史命名）
-    void api.startManualDownload(info, activeMode === 'nsis' ? 'fallback' : 'portable')
+    void api.startManualDownload(info, activeMode.value === 'nsis' ? 'fallback' : 'portable')
   }
 
   /** 下载失败后重试（拿当前 targetVersion 重来） */
@@ -228,7 +228,7 @@ export const useUpdateStore = defineStore('update', () => {
       currentVersion: currentVersion.value,
       tag: `v${targetVersion.value}`,
       url: errorUrl.value,
-      mode: activeMode,
+      mode: activeMode.value,
     })
   }
 
@@ -254,7 +254,7 @@ export const useUpdateStore = defineStore('update', () => {
     if (!localPath.value) return
     restarting.value = true
     try {
-      const r = await api.restartAndInstall(localPath.value, activeMode)
+      const r = await api.restartAndInstall(localPath.value, activeMode.value)
       if (!r?.ok) {
         restarting.value = false
         ElMessage.error(r?.error ?? '启动安装包失败，请手动打开安装包')
@@ -305,6 +305,8 @@ export const useUpdateStore = defineStore('update', () => {
     errorUrl,
     restarting,
     pendingInfo,
+    /** 当前安装形态（弹框文案要按 nsis / portable 分别说清楚） */
+    activeMode,
     // actions
     loadCurrentVersion,
     checkNow,

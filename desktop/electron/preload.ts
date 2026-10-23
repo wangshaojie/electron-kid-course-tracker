@@ -12,13 +12,10 @@ import type {
 
 contextBridge.exposeInMainWorld('kidfs', {
   userDataDir: () => ipcRenderer.invoke('fs:userDataDir'),
-  exists: (p: string) => ipcRenderer.invoke('fs:exists', p),
-  readFile: (p: string) => ipcRenderer.invoke('fs:readFile', p),
-  writeFile: (p: string, data: Uint8Array) => ipcRenderer.invoke('fs:writeFile', p, data),
-  ensureDir: (p: string) => ipcRenderer.invoke('fs:ensureDir', p),
   saveDialog: (opts: { defaultName?: string; filters?: { name: string; extensions: string[] }[] }) =>
     ipcRenderer.invoke('fs:saveDialog', opts),
-  readFileByPath: (p: string) => ipcRenderer.invoke('fs:readFileByPath', p),
+  // ⚠️ 只允许写"用户刚在另存为对话框里选过的那个路径"（主进程校验）
+  writeFile: (p: string, data: Uint8Array) => ipcRenderer.invoke('fs:writeFile', p, data),
 })
 
 // 版本更新：订阅主进程推送 + 触发下载/安装

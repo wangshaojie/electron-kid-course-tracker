@@ -3,7 +3,14 @@ import { fileURLToPath } from 'node:url'
 import path from 'node:path'
 import fs from 'node:fs/promises'
 import fsSync from 'node:fs'
-import { checkForUpdates, checkForUpdatesManual, startManualDownload, restartAndInstall } from './updater'
+import {
+  checkForUpdates,
+  checkForUpdatesManual,
+  startManualDownload,
+  restartAndInstall,
+  isAuthorizedInstallerPath,
+  cleanupOldUpdateFiles,
+} from './updater'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 process.env.ELECTRON_DISABLE_SECURITY_WARNINGS = 'true'
@@ -14,6 +21,41 @@ const VITE_DEV_SERVER_URL = process.env['VITE_DEV_SERVER_URL']
 const OPEN_DEVTOOLS_IN_DEV = true
 const OPEN_DEVTOOLS_FORCED = process.argv.includes('--open-devtools') || process.env.OPEN_DEVTOOLS === '1'
 let mainWindow: BrowserWindow | null = null
+
+/**
+ * 应用数据目录（userData 根；dev 模式再套一层 kid-course-tracker 子目录）
+ * --------------------------------------------------------------
+ * ⚠️ boot.log 和 fs:* 读写必须用**同一个**目录，否则用户排查时
+ *    "数据在这、日志在那"，两个地方翻（之前 dev 模式就是这样分叉的）。
+ */
+function resolveDataDir(): string {
+  const userData = app.getPath('userData')
+  return VITE_DEV_SERVER_URL ? path.join(userData, 'kid-course-tracker') : userData
+}
+
+/** 路径归一化（Windows 大小写不敏感，比较前统一） */
+function normalizePath(p: string): string {
+  try {
+    const full = path.resolve(p)
+    return process.platform === 'win32' ? full.toLowerCase() : full
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * 写文件白名单：只认"用户刚在保存对话框里选过的那个路径"
+ * --------------------------------------------------------------
+ * ⚠️ 之前 fs:writeFile 接受任意路径 —— 渲染端只要被注入脚本，
+ *    就能往用户磁盘任何位置写文件（覆盖 .bat / 改配置 / 投毒）。
+ *    现在必须先经过 saveDialog（用户亲手选的路径）才允许写。
+ */
+let allowedWritePath = ''
+
+function isAuthorizedWritePath(p: string): boolean {
+  if (!allowedWritePath) return false
+  return normalizePath(p) === normalizePath(allowedWritePath)
+}
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -43,9 +85,11 @@ function createWindow() {
   })
 
   // 转发渲染端 console 到主进程 stdout（dev 时方便看错）
-  // 同时把渲染端 log 落到 userData/boot.log，排查"白屏/启动慢"时用
-  const bootLogPath = path.join(app.getPath('userData'), 'boot.log')
-  const prevLogPath = path.join(app.getPath('userData'), 'boot.prev.log')
+  // 同时把渲染端 log 落到数据目录下的 boot.log，排查"白屏/启动慢"时用
+  const dataDir = resolveDataDir()
+  fsSync.mkdirSync(dataDir, { recursive: true })
+  const bootLogPath = path.join(dataDir, 'boot.log')
+  const prevLogPath = path.join(dataDir, 'boot.prev.log')
   const writeBootLog = (line: string) => {
     fsSync.appendFile(bootLogPath, line + '\n', () => {})
   }
@@ -98,18 +142,28 @@ if (!isPrimaryInstance) {
   app.quit()
 } else {
   app.on('second-instance', () => {
-    if (!mainWindow) return
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
+    // ⚠️ 窗口可能已经被销毁（用户关掉窗口但应用还在跑），
+    //    对已销毁的 BrowserWindow 调 isMinimized/focus 会抛异常。
+    const win = mainWindow
+    if (!win || win.isDestroyed()) {
+      if (BrowserWindow.getAllWindows().length === 0) createWindow()
+      return
+    }
+    if (win.isMinimized()) win.restore()
+    win.focus()
   })
 }
 
 app.whenReady().then(() => {
   if (!isPrimaryInstance) return
   registerFsHandlers()
+  // 清理 %TEMP%\TimeWell-update 里超过 7 天的旧装包（几十上百 MB，别一直堆着）
+  cleanupOldUpdateFiles()
   // 打开外链（更新提示的"前往下载"按钮）
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {
-    if (typeof url === 'string' && /^https?:\/\//.test(url)) {
+    // ⚠️ 大小写不敏感（与 setWindowOpenHandler 保持一致）：
+    //    HTTP://… / Https://… 也是合法 http(s) 链接，之前会被这里拦掉
+    if (typeof url === 'string' && /^https?:\/\//i.test(url)) {
       await shell.openExternal(url)
     }
   })
@@ -121,13 +175,16 @@ app.whenReady().then(() => {
     },
   )
   // manual 模式：用户点"打开安装包"→ shell.openPath
+  // ⚠️ 必须校验路径：否则渲染端能让主进程执行磁盘上任意 .exe
   ipcMain.handle('update:openLocalFile', async (_e, p: string) => {
-    if (typeof p === 'string' && p && fsSync.existsSync(p)) {
-      await shell.openPath(p)
-    }
+    if (!isAuthorizedInstallerPath(p)) return
+    await shell.openPath(p)
   })
   // 用户点"重启并安装"→ 退出应用 + 拉起装包（装完自动开新版本）
   ipcMain.handle('update:restartAndInstall', (_e, p: string, mode: 'nsis' | 'portable') => {
+    if (!isAuthorizedInstallerPath(p)) {
+      return { ok: false, error: '安装包路径不合法，请重新下载' }
+    }
     return restartAndInstall(p, mode === 'nsis' ? 'nsis' : 'portable')
   })
   // 渲染端展示当前版本号（侧栏底部），统一读 package.json 不读 app.getVersion
@@ -163,42 +220,32 @@ app.on('window-all-closed', () => {
 // === 文件系统 IPC（preload 转给渲染进程） ===
 
 function registerFsHandlers() {
-  // 数据目录：直接用 userData 根。
-  // - dev 模式：userData = .../Roaming/Electron（electron 启动器的默认名）
-  // - 打包模式：userData = .../Roaming/<productName> 或 .../Roaming/<name>
-  // dev 模式下我们想跟其他 electron dev app 隔开，所以包一层 "kid-course-tracker" 子目录；
-  // 打包模式直接用根目录即可（productName 已经隔开了）。
-  const userData = app.getPath('userData')
-  const dataDir = VITE_DEV_SERVER_URL
-    ? path.join(userData, 'kid-course-tracker')
-    : userData
+  // 数据目录：dev 模式用 userData/kid-course-tracker 隔开，打包模式直接用 userData 根
+  // （与 boot.log 同一个目录，见 resolveDataDir）
+  const dataDir = resolveDataDir()
   fsSync.mkdirSync(dataDir, { recursive: true })
 
   ipcMain.handle('fs:userDataDir', () => dataDir)
-  ipcMain.handle('fs:exists', (_e, p: string) => {
-    try { return fsSync.existsSync(p) } catch { return false }
-  })
-  ipcMain.handle('fs:readFile', async (_e, p: string) => {
-    const buf = await fs.readFile(p)
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
-  })
-  ipcMain.handle('fs:writeFile', async (_e, p: string, data: Uint8Array) => {
-    await fs.mkdir(path.dirname(p), { recursive: true })
-    await fs.writeFile(p, data)
-  })
-  ipcMain.handle('fs:ensureDir', async (_e, p: string) => {
-    await fs.mkdir(p, { recursive: true })
-  })
+  // ⚠️ 读文件 / 判存在 / 建目录这几个 handler **渲染端没有任何调用方**
+  //    （唯一用到 kidfs 的是 Excel 导出：saveDialog + writeFile）。
+  //    它们却等于"渲染端可读/写磁盘任意路径"—— 直接删掉，不留隐患。
+  //    以后真要用，请按"限定在 dataDir 内"的方式重新加，并写清用途。
   ipcMain.handle('fs:saveDialog', async (_e, opts: { defaultName?: string; filters?: { name: string; extensions: string[] }[] }) => {
     const { dialog } = await import('electron')
     const r = await dialog.showSaveDialog(mainWindow!, {
       defaultPath: opts.defaultName,
       filters: opts.filters,
     })
-    return r.canceled ? null : r.filePath
+    if (r.canceled || !r.filePath) return null
+    // 记下用户选中的路径 —— fs:writeFile 只认这个路径
+    allowedWritePath = r.filePath
+    return r.filePath
   })
-  ipcMain.handle('fs:readFileByPath', async (_e, p: string) => {
-    const buf = await fs.readFile(p)
-    return buf.buffer.slice(buf.byteOffset, buf.byteOffset + buf.byteLength)
+  ipcMain.handle('fs:writeFile', async (_e, p: string, data: Uint8Array) => {
+    if (!isAuthorizedWritePath(p)) {
+      throw new Error('写入路径未授权：请先通过"另存为"选择目标文件')
+    }
+    await fs.mkdir(path.dirname(p), { recursive: true })
+    await fs.writeFile(p, data)
   })
 }

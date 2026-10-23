@@ -38,15 +38,12 @@ declare global {
   interface Window {
     kidfs: {
       userDataDir(): Promise<string>
-      exists(path: string): boolean
-      readFile(path: string): Promise<ArrayBuffer>
-      writeFile(path: string, data: Uint8Array): Promise<void>
-      ensureDir(path: string): Promise<void>
       saveDialog(opts: {
         defaultName?: string
         filters?: { name: string; extensions: string[] }[]
       }): Promise<string | null>
-      readFileByPath(p: string): Promise<ArrayBuffer>
+      /** 只允许写"刚在另存为对话框里选过的那个路径"（主进程校验） */
+      writeFile(path: string, data: Uint8Array): Promise<void>
     }
     // 版本更新（preload 暴露）
     updater: {

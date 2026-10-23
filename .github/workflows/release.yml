@@ -85,23 +85,47 @@ jobs:
       #   - push v* 触发：tag 就是 github.ref_name（如 v0.2.1）
       #   - 手动 Run workflow：tag 取 inputs.version（用户输入）
       #   - 如果 v* push 进来但没传 version input（不应该发生，但兜底），退回 ref_name
+      #
+      # ⚠️⚠️ 不要把 `${{ ... }}` 直接插值进 pwsh 脚本源码！
+      #   tag / input 的值会原样进到 `run:` 的脚本文本里，
+      #   一个形如 `v1.0.0"; Write-Host pwned; #` 的 tag 就能跳出字符串执行任意命令，
+      #   而这个 job 有 `contents: write`（能直接推 tag / 建 Release）。
+      #   正解：值走 `env:` 传进环境变量，脚本里只读 `$env:XXX`（GitHub 官方推荐）。
+      #   再加一道版本号格式校验（只允许 v<数字>.<数字>.<数字>[-后缀]），双保险。
       - name: Resolve release version
         id: version
         shell: pwsh
+        env:
+          EVENT_NAME: ${{ github.event_name }}
+          DISPATCH_VERSION: ${{ inputs.version }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          $ErrorActionPreference = 'Stop'
+          if ($env:EVENT_NAME -eq 'workflow_dispatch') {
+            $version = "$env:DISPATCH_VERSION".Trim()
           } else {
-            # 去掉 ref_name 前缀 refs/tags/ 得到 v0.2.1
-            $tag = "${{ github.ref_name }}".Replace("refs/tags/", "")
-            "version=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+            $version = "$env:REF_NAME".Trim()
           }
+          # 只接受 vX.Y.Z（可带 -rc.1 / -beta.2 之类预发布后缀）
+          if ($version -notmatch '^v\d+\.\d+\.\d+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+            Write-Error "版本号格式非法: '$version'（只允许 v数字.数字.数字[-预发布后缀]）"
+            exit 1
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          Write-Host "OK: release 版本号 = $version"
 
       - name: Resolve version (without 'v' prefix) for file glob
         id: pkgver
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
-          $tag = "${{ steps.version.outputs.version }}" -replace '^v', ''
+          $ErrorActionPreference = 'Stop'
+          $tag = "$env:VERSION".Trim() -replace '^v', ''
+          if ($tag -notmatch '^\d+\.\d+\.\d+(-[0-9A-Za-z][0-9A-Za-z.-]*)?$') {
+            Write-Error "包版本号格式非法: '$tag'"
+            exit 1
+          }
           "pkgver=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       # electron-builder 按 **package.json 的 version** 命名产物，
@@ -111,9 +135,11 @@ jobs:
       - name: Assert tag matches package.json version
         working-directory: desktop
         shell: pwsh
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
         run: |
           $ErrorActionPreference = 'Stop'
-          $tag = "${{ steps.version.outputs.version }}" -replace '^v', ''
+          $tag = "$env:VERSION".Trim() -replace '^v', ''
           $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
           if ($tag -ne $pkg) {
             Write-Error "tag ($tag) 与 desktop/package.json version ($pkg) 不一致 —— electron-builder 会按 package.json 版本命名产物，产物名会对不上"

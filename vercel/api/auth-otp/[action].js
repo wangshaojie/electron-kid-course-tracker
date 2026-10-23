@@ -25,6 +25,7 @@
  */
 
 import crypto from 'node:crypto'
+import { promisify } from 'node:util'
 import { Resend } from 'resend'
 import { getSql } from '../../lib/db.js'
 import { signJwt, uidOf, verifyJwt } from '../../lib/jwt.js'
@@ -76,21 +77,33 @@ function hashCode(code, salt) {
   return crypto.createHash('sha256').update(`${salt}:${code}`).digest('hex')
 }
 
-function hashPassword(password) {
+/**
+ * scrypt 哈希 / 校验（**异步**）
+ * --------------------------------------------------------------
+ * ⚠️ 之前用 crypto.scryptSync：N=16384 单次约 50-100ms 纯 CPU 占用，
+ *    同步调用会把整个 Vercel 实例的事件循环卡死 —— 并发登录时
+ *    health 检查、其它请求全部排队，看起来像"服务卡了"。
+ *    改用 crypto.scrypt（线程池里跑），事件循环不被阻塞。
+ *
+ * ⚠️ 参数（N/r/p/长度）与老版本必须完全一致，否则老账号的哈希校验会失败。
+ */
+const scryptAsync = promisify(crypto.scrypt)
+
+async function hashPassword(password) {
   const salt = crypto.randomBytes(16).toString('hex')
   const N = 16384
   const r = 8
   const p = 1
-  const hash = crypto.scryptSync(password, salt, 64, { N, r, p })
+  const hash = await scryptAsync(password, salt, 64, { N, r, p })
   return `scrypt$${N}$${r}$${p}$${salt}$${hash.toString('hex')}`
 }
-function verifyPassword(password, stored) {
+async function verifyPassword(password, stored) {
   try {
     const parts = String(stored).split('$')
     if (parts[0] !== 'scrypt' || parts.length !== 6) return false
     const [, N, r, p, salt, hashHex] = parts
     const expected = Buffer.from(hashHex, 'hex')
-    const actual = crypto.scryptSync(password, salt, expected.length, {
+    const actual = await scryptAsync(password, salt, expected.length, {
       N: Number(N),
       r: Number(r),
       p: Number(p),
@@ -444,7 +457,7 @@ async function handleLogin(req, res, body) {
     return sendJson(res, 500, { error: 'db_error', detail: e?.message || String(e) })
   }
 
-  const ok = !!row && verifyPassword(password, row.password_hash)
+  const ok = !!row && (await verifyPassword(password, row.password_hash))
   if (!ok) {
     recordPasswordFailure(email)
     return sendJson(res, 401, { error: 'invalid_credentials' })
@@ -481,7 +494,7 @@ async function handleRegister(req, res, body) {
   }
 
   // 3) 写密码
-  const hash = hashPassword(password)
+  const hash = await hashPassword(password)
   try {
     await sql`
       INSERT INTO user_passwords (email, password_hash, created_at, updated_at)
@@ -552,7 +565,7 @@ async function handleSetPassword(req, res, body) {
 
 // 写密码（upsert user_passwords）—— Bearer / OTP 两条路径共用
 async function writePasswordUpsert(res, email, password) {
-  const hash = hashPassword(password)
+  const hash = await hashPassword(password)
   try {
     const sql = getSql()
     await sql`
@@ -595,14 +608,14 @@ async function handleChangePassword(req, res, body) {
   }
   if (!row) return sendJson(res, 400, { error: 'password_not_set' })
 
-  const ok = verifyPassword(oldPassword, row.password_hash)
+  const ok = await verifyPassword(oldPassword, row.password_hash)
   if (!ok) {
     recordPasswordFailure(email)
     return sendJson(res, 401, { error: 'wrong_old_password' })
   }
   loginFails.delete(email)
 
-  const hash = hashPassword(newPassword)
+  const hash = await hashPassword(newPassword)
   try {
     const sql = getSql()
     await sql`UPDATE user_passwords SET password_hash = ${hash}, updated_at = now() WHERE email = ${email}`
