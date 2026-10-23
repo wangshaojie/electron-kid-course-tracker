@@ -312,6 +312,7 @@ const OTP_ERROR_MAP: Record<string, string> = {
   code_expired: '验证码已过期（10 分钟内有效），请重新获取',
   code_mismatch: '验证码错误，请检查后重新输入',
   too_many_attempts: '验证码错误次数太多，请重新获取',
+  too_many_verify_attempts: '验证码错误次数过多，请 15 分钟后再试，或重新获取验证码',
   invalid_code: '验证码格式不正确（应为 6 位数字）',
   // 网络
   network_error: '网络连接失败，请检查网络后重试',
@@ -647,6 +648,10 @@ const DATA_API_ERROR_MAP: Record<string, string> = {
   not_found: '记录不存在或已被删除',
   method_not_allowed: '不支持的操作',
   empty_payload: '没有需要更新的内容',
+  // 累计课时超限（数据库触发器 enforce_course_hours_limit 抛的）
+  course_hours_exceeded: '该课程剩余课时不足，不能再增加打卡',
+  // 表级 CHECK 约束（金额/课时必须 > 0）
+  check_violation: '数据不合法：金额、课时必须大于 0',
   db_error: '服务暂时不可用，请稍后重试',
   internal: '服务异常，请稍后重试',
 }

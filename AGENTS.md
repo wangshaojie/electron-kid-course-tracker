@@ -284,6 +284,8 @@ kid-course-tracker/
   - 密码 ≥ 8 位含字母数字（前端 + 服务端双重校验）
   - 登录失败统一返回 `invalid_credentials`（防邮箱枚举）
   - 按 email 连续失败 5 次锁 15 分钟（内存 Map `loginFails`，冷启动重置可接受）
+    - ⚠️ 计数语义：`lockedAt=0` 只代表"累计过失败次数"，**不代表没锁**；只有 `lockedAt` 非 0 才判锁
+    - 踩过的坑：曾经写成 `if (lock) loginFails.delete(email)`，把计数一起删掉 → count 永远停在 1，"5 次锁 15 分钟"完全失效（密码可无限次在线猜测）。现在统一走 `checkPasswordLock()` / `recordPasswordFailure()`
   - 未设密码的邮箱 `/login` 也返回同一句错误（理论上 v0.4 后不存在这种状态，但保留兜底）
 - 失败计数复用 `loginFails`（不重新发明）
 
@@ -291,6 +293,9 @@ kid-course-tracker/
 - `Login.vue` → "其他方式" Tab → 邮箱 + 6 位码 → `/verify`
 - **v0.4 之后**：仅供老用户 / 设备迁移应急使用，新用户必须走注册设密
 - `Login.vue` 验证码 Tab 顶部加黄色提示框："仅老用户应急 / 设备迁移使用"
+- **限流（后端）**：邮箱级 5 次错码锁 15 分钟（`verifyFails`）+ 单 IP 10 分钟 30 次（`verifyIpHits`）
+  - 错码时**只给最新那个码**的 attempts +1（原来把所有有效码一起 +1 → 一次输错烧死所有验证码，用户连自己收到的那封都验证不了）
+  - 错码 / 无有效码都计失败（防止拿 `/verify` 探测某邮箱是否在等验证码）
 
 #### Session 持久化（与 v0.2 一致）
 
@@ -337,7 +342,7 @@ kid-course-tracker/
 - **所有业务表 owner_id 必须是 self uid**（不允许跨账号读写）
 - 渲染端 store **全部走 data-api**：`businessApi('GET/POST/PATCH/DELETE', '/b/:table')`，`owner_id` 由云函数从 JWT 强制注入，前端传的 `owner_id` 被忽略
 - 数据库层 RLS 已开启 + anon policy/权限已删（migration 20260817000000），anon 直连 PostgREST 一律被拒；data-api 用 service role（BYPASSRLS）不受影响
-- 课时扣减：客户端预校验（used + hours > total 报错） + 数据库 CHECK
+- 课时扣减：客户端预校验（used + hours > total 报错） + **数据库触发器**（`enforce_course_hours_limit`，migration 20261023153000）
 - 激活孩子同步：见 `stores/children.ts` → `data-api /b/user_prefs`（PATCH 无 id = upsert）
 
 ### 4.3 切换账号不残留（重要！）
@@ -352,7 +357,11 @@ App.vue 有三件套：
 ### 4.4 数据校验策略
 
 - **金额、课时必填 > 0**（表单 validators + DB CHECK 双重保险）
-- **课时扣减禁止变负**（客户端预校验 + DB CHECK）
+- **课时扣减禁止变负**（客户端预校验 + **DB 触发器**）
+  - 触发器 `enforce_course_hours_limit()` 在 checkins 落库后校验该课程累计课时 ≤ `courses.total_hours`
+  - 超限抛 `check_violation`（SQLSTATE 23514，message 前缀 `course_hours_exceeded`）→ data-api 翻译成 409 `course_hours_exceeded`
+  - 孤儿打卡（课程已删）无总额可校验 → 放行
+  - 校验时对 courses 行加 `FOR UPDATE` 锁 → 同一课程并发打卡串行化，多设备不会扣穿
 - **删除课程 = 二次确认** + 客户端级联删打卡
 - **删除孩子 = 二次确认**（设置页做）
 

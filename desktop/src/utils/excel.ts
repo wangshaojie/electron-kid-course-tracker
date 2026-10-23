@@ -128,7 +128,25 @@ export async function exportToExcel(
     // 该课程累计已用（全量口径；未传 allCheckins 时退化为本期）
     const totalUsed = course ? sumHours(totalByCourseId.get(course.id)) : periodUsed
     // 明细表的「累计已用」从「期间开始前的累计」起算，而不是从 0
-    let acc = Math.max(0, totalUsed - periodUsed)
+    //
+    // ⚠️ 不能用 `totalUsed - periodUsed`（这是之前引入的回归）：
+    //    totalUsed 是**全量**（含期间之后、期间之前的打卡），
+    //    减掉期间内的只消掉了期间内那部分，期间**之后**的打卡会被
+    //    当成"期间开始前就有的"倒扣进初值。
+    //    例：3 月导出、4 月还有 4 节打卡 → 初值多算 4 节，
+    //    明细的累计与剩余全错（真实 6 节/剩余 4 节 → 导出 10 节/0 节）。
+    //    「近 N 天 / 全部」是尾部区间，恰好不受影响，所以只有自定义历史区间会错。
+    //
+    // 正确口径：期间开始前的累计 = 该课程中 日期 < 期间内最早打卡日期 的课时合计。
+    // （list 就是该课程在期间内的全部打卡，所以最早那条之前的都属于期间外）
+    const firstPeriodDate = list.length
+      ? list.map((c) => c.date).sort()[0]!
+      : null
+    const beforeUsed =
+      course && firstPeriodDate
+        ? sumHours((totalByCourseId.get(course.id) ?? []).filter((c) => c.date < firstPeriodDate))
+        : 0
+    let acc = Math.max(0, beforeUsed)
 
     // 标题条（合并整行，深绿底白字）
     ws.mergeCells(`A${r}:E${r}`)
@@ -143,7 +161,9 @@ export async function exportToExcel(
 
     // 课程信息卡（合并整行，浅绿底）
     if (course) {
-      const remain = round2(course.total_hours - totalUsed)
+      // ⚠️ 必须 clamp 到 0：超课时（累计 > 购买）时原来会显示「剩余 -2 节」，
+      //    而汇总 sheet 和 UI 都是 Math.max(0, …) → 同一份导出自相矛盾。
+      const remain = Math.max(0, round2(course.total_hours - totalUsed))
       const pph =
         course.total_hours > 0
           ? Math.round((course.total_amount / course.total_hours) * 100) / 100
@@ -194,7 +214,9 @@ export async function exportToExcel(
         hours: c.hours,
         used: round2(acc),
         // 孤儿打卡（课程已删）没有总课时，剩余无意义 → 显示 '—' 而不是负数
-        remain: course ? round2(total - acc) : '—',
+        // ⚠️ 必须 clamp 到 0：超课时明细行原本显示「剩余 -2 节」，
+        //    与汇总 sheet / UI 的 0 节自相矛盾（同一个 bug 的两处表现）。
+        remain: course ? Math.max(0, round2(total - acc)) : '—',
         feedback: c.feedback,
       })
       row.height = 18

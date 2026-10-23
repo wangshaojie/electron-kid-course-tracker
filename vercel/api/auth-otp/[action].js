@@ -49,6 +49,21 @@ const LOGIN_LOCK_MS = 15 * 60 * 1000
 // Vercel Function 进程级 Map：每个 cold start 重置，跨实例不共享（与 CloudBase 现状一致）
 const loginFails = new Map()
 
+// ============== 验证码校验（/verify）限流 ==============
+// ⚠️ 之前 /verify 完全没有限流，后果有两层：
+//   1. 5 次错码会把该邮箱**所有**未过期码的 attempts 一起 +1
+//      → 连用户自己刚收到的那封验证码也判 too_many_attempts
+//      → 等于远程把验证码通道烧死，用户只能干等（叠加 /send 的 60 秒限流，
+//        实际体验是"登录/找回密码彻底不可用"）。
+//   2. 没有任何 IP / 邮箱维度的节流 → 6 位码可被无限次在线爆破。
+// 现在：邮箱级失败计数 + 锁定（防烧死）+ IP 级频次限制（防单机爆破）。
+const VERIFY_FAIL_LIMIT = 5
+const VERIFY_LOCK_MS = 15 * 60 * 1000
+const VERIFY_IP_LIMIT = 30
+const VERIFY_IP_WINDOW_MS = 10 * 60 * 1000
+const verifyFails = new Map() // email → { count, lockedAt, lastAt }
+const verifyIpHits = new Map() // ip → { count, windowStart }
+
 function genCode() {
   // ⚠️ 不能用 Math.random()：不是密码学安全随机数，OTP 的安全性依赖它
   // crypto.randomInt 是 CSPRNG，且没有 modulo bias
@@ -116,11 +131,108 @@ function rateLimitEmail(email) {
 }
 
 /**
+ * 取客户端 IP
+ * Vercel 平台会覆盖 X-Forwarded-For，外部无法伪造（已实测）
+ */
+function clientIp(req) {
+  return String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '')
+    .split(',')[0]
+    .trim()
+}
+
+/**
+ * 密码猜测锁：检查当前是否处于锁定期
+ * --------------------------------------------------------------
+ * ⚠️ 原来的 bug（本次修复）：
+ *   const lock = loginFails.get(email)
+ *   if (lock && Date.now() - lock.lockedAt < LOGIN_LOCK_MS) { ...判锁... }
+ *   if (lock) loginFails.delete(email)     ←←← 这里把计数一起删了
+ * lockedAt=0（只是累计失败次数、从未锁定）时，Date.now()-0 远超 15 分钟
+ * → 永远不判锁 → 接着把计数删掉 → count 永远停在 1，够不到 5 次
+ * → "连续 5 次锁 15 分钟"完全失效，密码可无限次在线猜测（改密的旧密码同理）。
+ *
+ * 现在的语义：
+ *   - lockedAt 有值且未过期 → 锁定中
+ *   - lockedAt 有值但已过期 → 整条作废，重新开始
+ *   - lockedAt 为 0（只是计数）→ 保留计数，继续累计
+ */
+function checkPasswordLock(email) {
+  const rec = loginFails.get(email)
+  if (!rec) return { locked: false }
+  if (rec.lockedAt) {
+    const elapsed = Date.now() - rec.lockedAt
+    if (elapsed < LOGIN_LOCK_MS) {
+      return { locked: true, retryAfterSec: Math.ceil((LOGIN_LOCK_MS - elapsed) / 1000) }
+    }
+    // 锁期已过 → 整条记录作废，重新计数
+    loginFails.delete(email)
+    return { locked: false }
+  }
+  return { locked: false }
+}
+
+/** 记录一次密码错误；达到上限则进入锁定期 */
+function recordPasswordFailure(email) {
+  const cur = loginFails.get(email) || { count: 0, lockedAt: 0, lastAt: 0 }
+  cur.count += 1
+  cur.lastAt = Date.now()
+  if (cur.count >= LOGIN_FAIL_LIMIT) cur.lockedAt = Date.now()
+  loginFails.set(email, cur)
+}
+
+/** 验证码失败锁（语义同 checkPasswordLock） */
+function checkVerifyLock(email) {
+  const rec = verifyFails.get(email)
+  if (!rec) return { locked: false }
+  if (rec.lockedAt) {
+    const elapsed = Date.now() - rec.lockedAt
+    if (elapsed < VERIFY_LOCK_MS) {
+      return { locked: true, retryAfterSec: Math.ceil((VERIFY_LOCK_MS - elapsed) / 1000) }
+    }
+    verifyFails.delete(email)
+    return { locked: false }
+  }
+  return { locked: false }
+}
+
+/** 记录一次验证码错误；达到上限则锁定该邮箱 15 分钟 */
+function recordVerifyFailure(email) {
+  const cur = verifyFails.get(email) || { count: 0, lockedAt: 0, lastAt: 0 }
+  cur.count += 1
+  cur.lastAt = Date.now()
+  if (cur.count >= VERIFY_FAIL_LIMIT) cur.lockedAt = Date.now()
+  verifyFails.set(email, cur)
+}
+
+/**
+ * IP 级频次限制：窗口内超过上限 → 直接 429
+ * 用来挡住"单机高频爆破"；邮箱级锁挡住"分布式针对某个账号"。
+ */
+function checkVerifyIp(ip) {
+  if (!ip) return { blocked: false }
+  const now = Date.now()
+  const rec = verifyIpHits.get(ip) || { count: 0, windowStart: now }
+  if (now - rec.windowStart >= VERIFY_IP_WINDOW_MS) {
+    rec.count = 0
+    rec.windowStart = now
+  }
+  rec.count += 1
+  verifyIpHits.set(ip, rec)
+  if (rec.count > VERIFY_IP_LIMIT) {
+    return {
+      blocked: true,
+      retryAfterSec: Math.ceil((VERIFY_IP_WINDOW_MS - (now - rec.windowStart)) / 1000),
+    }
+  }
+  return { blocked: false }
+}
+
+/**
  * 清理进程内 Map 的过期条目
  * --------------------------------------------------------------
- * lastSendByIp / lastSendByEmail / loginFails 都是进程级 Map，
- * 原来只有"命中上限"才写、从不删除 → 长期运行的实例会无限膨胀。
- * 每次发码/登录时顺手扫一遍，开销可忽略。
+ * lastSendByIp / lastSendByEmail / loginFails / verifyFails / verifyIpHits
+ * 都是进程级 Map，原来只有"命中上限"才写、从不删除 → 长期运行的实例会无限膨胀。
+ * 每次发码/登录/校验时顺手扫一遍，开销可忽略。
  */
 function sweepInMemoryMaps() {
   const now = Date.now()
@@ -135,9 +247,20 @@ function sweepInMemoryMaps() {
       lastSendByEmail.delete(email)
     }
   }
-  // 登录失败锁：锁定期已过 → 条目可删
+  // 登录失败锁：锁定期已过 → 条目可删；
+  // 只累计过次数、没锁定，且很久没动静 → 也可删（否则永远不清）
   for (const [email, rec] of loginFails) {
     if (rec.lockedAt && now - rec.lockedAt >= LOGIN_LOCK_MS) loginFails.delete(email)
+    else if (!rec.lockedAt && rec.lastAt && now - rec.lastAt >= 60 * 60 * 1000) loginFails.delete(email)
+  }
+  // 验证码失败锁：同上
+  for (const [email, rec] of verifyFails) {
+    if (rec.lockedAt && now - rec.lockedAt >= VERIFY_LOCK_MS) verifyFails.delete(email)
+    else if (!rec.lockedAt && rec.lastAt && now - rec.lastAt >= 60 * 60 * 1000) verifyFails.delete(email)
+  }
+  // IP 频次窗口过期 → 条目可删
+  for (const [ip, rec] of verifyIpHits) {
+    if (now - rec.windowStart >= VERIFY_IP_WINDOW_MS) verifyIpHits.delete(ip)
   }
 }
 
@@ -169,9 +292,13 @@ async function verifyOtpAndConsume(email, code) {
       }
     }
 
-    // 全部不匹配 → 所有有效码的失败次数 +1（一条 UPDATE，避免逐条往返）
-    const ids = usable.map((r) => r.id)
-    await sql`UPDATE email_otps SET attempts = attempts + 1 WHERE id IN ${sql(ids)}`
+    // 全部不匹配 → 只给**最新那个码**的失败次数 +1
+    // ⚠️ 原来是把该邮箱所有有效码一起 +1（WHERE id IN (...)）：
+    //    用户手滑输错一次，就把自己所有还没用的验证码全部烧死
+    //    （连用户自己刚收到的那封都判 too_many_attempts）。
+    //    现在只惩罚最新码：更早那封仍可用（上面已支持多码比对），
+    //    防爆破的主闸交给 handleVerify 的邮箱级失败计数。
+    await sql`UPDATE email_otps SET attempts = attempts + 1 WHERE id = ${usable[0].id}`
     return { ok: false, status: 401, error: 'code_mismatch' }
   } catch (e) {
     console.error('[otp] db error:', e)
@@ -184,9 +311,7 @@ async function handleSend(req, res, body) {
   const email = String(body.email || '').trim().toLowerCase()
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' })
   sweepInMemoryMaps()
-  const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '')
-    .split(',')[0]
-    .trim()
+  const ip = clientIp(req)
   if (ip && !rateLimitIp(ip)) return sendJson(res, 429, { error: 'too_many_requests_ip' })
   if (!rateLimitEmail(email)) return sendJson(res, 429, { error: 'too_many_requests_email' })
 
@@ -260,9 +385,37 @@ async function handleVerify(req, res, body) {
   const code = String(body.code || '').trim()
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' })
   if (!/^\d{6}$/.test(code)) return sendJson(res, 400, { error: 'invalid_code' })
+  sweepInMemoryMaps()
+
+  // IP 级：挡单机高频爆破
+  const ipCheck = checkVerifyIp(clientIp(req))
+  if (ipCheck.blocked) {
+    return sendJson(res, 429, {
+      error: 'too_many_verify_attempts',
+      retryAfterSec: ipCheck.retryAfterSec,
+    })
+  }
+  // 邮箱级：挡分布式针对某个账号的爆破，同时防止"远程烧死验证码通道"
+  const lock = checkVerifyLock(email)
+  if (lock.locked) {
+    return sendJson(res, 429, {
+      error: 'too_many_verify_attempts',
+      retryAfterSec: lock.retryAfterSec,
+    })
+  }
 
   const r = await verifyOtpAndConsume(email, code)
-  if (!r.ok) return sendJson(res, r.status, { error: r.error, detail: r.detail })
+  if (!r.ok) {
+    // 错码 / 没有有效码都计一次失败：
+    //   code_mismatch    → 防止 6 位码被爆破
+    //   no_active_code   → 防止拿 /verify 探测"某邮箱有没有在等验证码"
+    if (r.error === 'code_mismatch' || r.error === 'no_active_code') {
+      recordVerifyFailure(email)
+    }
+    return sendJson(res, r.status, { error: r.error, detail: r.detail })
+  }
+  // 验证成功 → 清空该邮箱的失败计数
+  verifyFails.delete(email)
 
   const uid = uidOf(email)
   const token = await signJwt({ email, uid })
@@ -276,12 +429,10 @@ async function handleLogin(req, res, body) {
   if (!password) return sendJson(res, 400, { error: 'invalid_password' })
   sweepInMemoryMaps()
 
-  const lock = loginFails.get(email)
-  if (lock && Date.now() - lock.lockedAt < LOGIN_LOCK_MS) {
-    const retryAfterSec = Math.ceil((LOGIN_LOCK_MS - (Date.now() - lock.lockedAt)) / 1000)
-    return sendJson(res, 429, { error: 'too_many_login_attempts', retryAfterSec })
+  const lock = checkPasswordLock(email)
+  if (lock.locked) {
+    return sendJson(res, 429, { error: 'too_many_login_attempts', retryAfterSec: lock.retryAfterSec })
   }
-  if (lock) loginFails.delete(email)
 
   let row = null
   try {
@@ -295,13 +446,7 @@ async function handleLogin(req, res, body) {
 
   const ok = !!row && verifyPassword(password, row.password_hash)
   if (!ok) {
-    const cur = loginFails.get(email) || { count: 0, lockedAt: 0 }
-    cur.count += 1
-    if (cur.count >= LOGIN_FAIL_LIMIT) {
-      cur.count = 0
-      cur.lockedAt = Date.now()
-    }
-    loginFails.set(email, cur)
+    recordPasswordFailure(email)
     return sendJson(res, 401, { error: 'invalid_credentials' })
   }
   loginFails.delete(email)
@@ -434,12 +579,10 @@ async function handleChangePassword(req, res, body) {
   if (!isValidPassword(newPassword)) return sendJson(res, 400, { error: 'weak_password' })
   if (oldPassword === newPassword) return sendJson(res, 400, { error: 'same_as_old' })
 
-  const lock = loginFails.get(email)
-  if (lock && Date.now() - lock.lockedAt < LOGIN_LOCK_MS) {
-    const retryAfterSec = Math.ceil((LOGIN_LOCK_MS - (Date.now() - lock.lockedAt)) / 1000)
-    return sendJson(res, 429, { error: 'wrong_old_password_locked', retryAfterSec })
+  const lock = checkPasswordLock(email)
+  if (lock.locked) {
+    return sendJson(res, 429, { error: 'wrong_old_password_locked', retryAfterSec: lock.retryAfterSec })
   }
-  if (lock) loginFails.delete(email)
 
   let row = null
   try {
@@ -454,13 +597,7 @@ async function handleChangePassword(req, res, body) {
 
   const ok = verifyPassword(oldPassword, row.password_hash)
   if (!ok) {
-    const cur = loginFails.get(email) || { count: 0, lockedAt: 0 }
-    cur.count += 1
-    if (cur.count >= LOGIN_FAIL_LIMIT) {
-      cur.count = 0
-      cur.lockedAt = Date.now()
-    }
-    loginFails.set(email, cur)
+    recordPasswordFailure(email)
     return sendJson(res, 401, { error: 'wrong_old_password' })
   }
   loginFails.delete(email)

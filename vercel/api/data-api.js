@@ -256,8 +256,33 @@ async function handleBusiness(req, res, table, id, searchParams) {
     return sendJson(res, 405, { error: 'method_not_allowed', detail: req.method })
   } catch (e) {
     console.error('[business] handler error:', e)
-    return sendJson(res, 500, { error: 'db_error', detail: e?.message || String(e) })
+    // 约束类错误 → 翻译成中文；其余 → 不把 PG 原始报错回给客户端
+    const c = describeConstraintError(e)
+    if (c) return sendJson(res, c.status, { error: c.error, detail: c.detail })
+    return sendJson(res, 500, { error: 'db_error' })
   }
+}
+
+/**
+ * 数据库约束错误 → 用户能看懂的中文
+ * --------------------------------------------------------------
+ * · course_hours_exceeded：触发器 enforce_course_hours_limit() 抛的
+ *   "累计课时超过购买课时"（SQLSTATE 23514 + 自定义 message 前缀）
+ * · 其余 23514：表级 CHECK 约束（如 hours > 0、amount > 0）
+ *
+ * ⚠️ 之前这些 PG 原始报错会**原样回给客户端**（detail 里带表名/列名/约束名），
+ *    等于给攻击者一份 schema 说明书。现在统一翻译成固定文案，
+ *    原始报错只留在服务端 console.error 里。
+ */
+function describeConstraintError(e) {
+  const msg = String(e?.message || '')
+  if (e?.code === '23514' && /course_hours_exceeded/.test(msg)) {
+    return { status: 409, error: 'course_hours_exceeded', detail: '该课程剩余课时不足，不能再增加打卡' }
+  }
+  if (e?.code === '23514') {
+    return { status: 400, error: 'check_violation', detail: '数据不合法：金额、课时必须大于 0' }
+  }
+  return null
 }
 
 function handleHealth(req, res) {

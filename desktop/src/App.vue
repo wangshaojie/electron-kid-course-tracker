@@ -39,6 +39,11 @@ const initError = ref<string | null>(null)
 // 默认 true：登录后立即进入“内容区同步中”态，避免先闪一帧空页面再切 loading
 const initializing = ref(true)
 let loadingPromise: Promise<void> | null = null
+// 本次加载属于哪个账号（uid）。用于区分「同一账号的并发调用」和「切换账号」
+let loadingUid = ''
+// 加载代次：只有最新一代的加载才能改 initializing / initError，
+// 避免旧账号的加载收尾时把新账号的 loading 态关掉
+let loadGeneration = 0
 
 /**
  * 切换账号 / 登录前 —— 清空三个 store + 清 localStorage 残留
@@ -52,9 +57,25 @@ function resetBusinessState() {
 }
 
 async function loadBusinessData() {
-  // 单飞：onMounted 和 watch 几乎同时触发时只跑一次
-  if (loadingPromise) return loadingPromise
-  loadingPromise = (async () => {
+  const uid = auth.user?.uid ?? ''
+
+  if (loadingPromise) {
+    // 同一账号的并发触发（onMounted + watch 几乎同时）→ 复用同一次加载
+    if (loadingUid === uid) return loadingPromise
+    // ⚠️ 换账号了：绝不能像以前那样 `return loadingPromise` 直接丢弃
+    //    旧实现的问题：A 的加载在途时登录 B，B 的加载被丢弃且此后没有 watch
+    //    会再触发 → 新账号数据永远不加载，界面一直显示 A 的数据，
+    //    还会往 B 账号写入 child_id=A 的孤儿行。
+    //    现在：等旧的彻底跑完再重跑 —— 旧的写完 store 之后才 reset，
+    //    保证新账号的数据不会被旧账号的结果污染。
+    const prev = loadingPromise
+    try { await prev } catch { /* ignore */ }
+    return loadBusinessData()
+  }
+
+  const gen = ++loadGeneration
+  loadingUid = uid
+  const p = (async () => {
     // 关键：先清空前一个账号的内存状态，再 load 新账号
     // 不然会出现"账号 A 退出 → 账号 B 登录 → 还看到 A 的数据"的 bug
     resetBusinessState()
@@ -71,16 +92,24 @@ async function loadBusinessData() {
       }
     } catch (e: unknown) {
       const msg = errorText(e, '加载数据失败')
-      initError.value = msg
-      ElMessage.error(msg)
+      // 只有最新一代才有权写错误提示（旧的收尾别覆盖新账号的状态）
+      if (gen === loadGeneration) {
+        initError.value = msg
+        ElMessage.error(msg)
+      }
     } finally {
-      initializing.value = false
+      if (gen === loadGeneration) initializing.value = false
     }
   })()
+  loadingPromise = p
   try {
-    await loadingPromise
+    await p
   } finally {
-    loadingPromise = null
+    // 只清理自己发起的那一次，别把后来者的 loadingPromise 清掉
+    if (loadingPromise === p) {
+      loadingPromise = null
+      loadingUid = ''
+    }
   }
 }
 
