@@ -7,6 +7,7 @@ import { ElMessage } from 'element-plus'
 import type { FormInstance } from 'element-plus'
 import { useChildrenStore, type Child } from '@/stores/children'
 import { CHILD_EMOJI_POOL, CHILD_COLOR_POOL } from '@/data/childPool'
+import { errorText } from '@/utils/error'
 
 const props = defineProps<{
   modelValue: boolean
@@ -86,7 +87,7 @@ async function onSubmit() {
     }
     emit('update:modelValue', false)
   } catch (e) {
-    ElMessage.error((e as Error).message)
+    ElMessage.error(errorText(e))
   } finally {
     submitting.value = false
   }

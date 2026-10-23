@@ -10,6 +10,7 @@ import { useCheckinsStore } from '@/stores/checkins'
 import { todayStr } from '@/utils/date'
 import { positiveNumber, dateRequired } from '@/utils/validators'
 import { courseColorOf } from '@/utils/courseColor'
+import { errorText } from '@/utils/error'
 
 const props = defineProps<{
   modelValue: boolean
@@ -40,6 +41,19 @@ const rules = {
   hours: [positiveNumber('节数必须大于 0')],
 }
 
+/**
+ * 默认选中的课程
+ * ⚠️ 原来直接取 courses.items[0]（按 paid_at DESC 排第一）。如果这门课已耗尽
+ *    (remain_hours === 0)，它会被 availableCourses 过滤掉 →
+ *    el-select 找不到匹配项 → 输入框显示原始 uuid，提交还会被 store 抛"剩余课时不足"。
+ *    所以优先挑「有剩余课时」的第一门。
+ */
+const defaultCourseId = computed(() => {
+  if (props.preselectedCourseId) return props.preselectedCourseId
+  const usable = courses.summaries.find((s) => s.remain_hours > 0)
+  return usable?.id ?? courses.summaries[0]?.id ?? ''
+})
+
 watch(
   () => props.modelValue,
   (v) => {
@@ -47,7 +61,7 @@ watch(
       // 每次打开都重置"显示已耗尽"状态,避免上次勾选带到下次
       showExhausted.value = false
       form.value = {
-        course_id: props.preselectedCourseId ?? courses.items[0]?.id ?? '',
+        course_id: defaultCourseId.value,
         date: props.preselectedDate ?? todayStr(),
         hours: 1,
         feedback: '',
@@ -96,7 +110,7 @@ async function onSubmit() {
     emit('saved')
     emit('update:modelValue', false)
   } catch (e) {
-    ElMessage.error((e as Error).message)
+    ElMessage.error(errorText(e))
   } finally {
     submitting.value = false
   }

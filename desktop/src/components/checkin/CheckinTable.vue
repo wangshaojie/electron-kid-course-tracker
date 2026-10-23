@@ -9,6 +9,7 @@ import { useCheckinsStore, type Checkin } from '@/stores/checkins'
 import { useCoursesStore, type Course } from '@/stores/courses'
 import { useChildrenStore } from '@/stores/children'
 import { confirm } from '@/utils/confirm'
+import { errorText } from '@/utils/error'
 import { todayStr, toDateStr } from '@/utils/date'
 import type { CourseRow } from '@/utils/excel'
 import CheckinFormDialog from './CheckinFormDialog.vue'
@@ -55,6 +56,12 @@ function toCourseRow(c: Course): CourseRow {
   }
 }
 
+/** 文件名安全化：宝贝名可能含 / \ : * ? 等 Windows 非法字符，直接拼进文件名会保存失败 */
+function safeFileName(s: string): string {
+  const cleaned = s.replace(/[\\/:*?"<>|]/g, '_').trim()
+  return cleaned || '宝贝'
+}
+
 async function onDelete(c: Checkin) {
   const ok = await confirm({
     title: '删除打卡',
@@ -73,8 +80,10 @@ function applyQuickRange(preset: 'week' | 'month' | 'all') {
   }
   const now = new Date()
   const from = new Date(now)
+  // ⚠️ 用 setDate 减天数，不能用 setMonth：
+  //    setMonth 会做月末钳位（3/31 - 1 月 → 2/31 → 溢出成 3/03），整月区间会被漏掉
   if (preset === 'week') from.setDate(from.getDate() - 7)
-  if (preset === 'month') from.setMonth(from.getMonth() - 1)
+  if (preset === 'month') from.setDate(from.getDate() - 30)
   dateRange.value = [toDateStr(from), todayStr()]
 }
 
@@ -107,17 +116,24 @@ async function onExport() {
 
     const totalAmount = pickedCourses.reduce((s, c) => s + c.total_amount, 0)
     const totalHours = pickedCourses.reduce((s, c) => s + c.total_hours, 0)
-    const usedHours = rows.value.reduce((s, c) => s + Number(c.hours), 0)
+    const periodHours = rows.value.reduce((s, c) => s + Number(c.hours), 0)
     const childLabel = `「${children.active?.name ?? '宝贝'}」`
     const filterLabel = buildFilterLabel()
 
     // 动态 import：exceljs 整包 ~900KB，只在用户点导出时按需加载
     const { exportToExcel } = await import('@/utils/excel')
-    const blob = await exportToExcel(pickedCourses, rows.value, {
-      childLabel,
-      rangeLabel: filterLabel,
-    })
-    const file = `kid-course-tracker_${children.active?.name ?? '宝贝'}_${todayStr()}.xlsx`
+    // 第 4 个参数传全量打卡：否则「累计已用 / 剩余课时」只能按期间内口径算，
+    // 与全量的「总购买课时」混算 → 导出的剩余课时虚高
+    const blob = await exportToExcel(
+      pickedCourses,
+      rows.value,
+      {
+        childLabel,
+        rangeLabel: filterLabel,
+      },
+      checkins.items,
+    )
+    const file = `kid-course-tracker_${safeFileName(children.active?.name ?? '宝贝')}_${todayStr()}.xlsx`
     const path = await window.kidfs.saveDialog({
       defaultName: file,
       filters: [{ name: 'Excel', extensions: ['xlsx'] }],
@@ -127,10 +143,10 @@ async function onExport() {
     await window.kidfs.writeFile(path, buf)
     ElMessage.success(
       `已导出 ${childLabel} · ${pickedCourses.length} 门科目 · ${rows.value.length} 条打卡` +
-        ` · 总投入 ${totalAmount} · 总课时 ${totalHours} · 已上 ${usedHours}`,
+        ` · 总投入 ${totalAmount} · 总课时 ${totalHours} · 本期打卡 ${periodHours} 节`,
     )
   } catch (e) {
-    ElMessage.error('导出失败：' + (e as Error).message)
+    ElMessage.error('导出失败：' + errorText(e))
   } finally {
     exporting.value = false
   }

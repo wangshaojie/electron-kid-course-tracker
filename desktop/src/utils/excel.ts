@@ -10,11 +10,26 @@ import type { Course } from '@/stores/courses'
 import type { Checkin } from '@/stores/checkins'
 import { formatMoney } from './money'
 
-/** 纯函数：算某课程的已上课时（从入参 checkins 数组） */
-function sumHoursByCourse(checkins: Checkin[], courseId: string): number {
-  return checkins
-    .filter((c) => c.course_id === courseId)
-    .reduce((s, c) => s + Number(c.hours), 0)
+/** 纯函数：把打卡按 course_id 分组 */
+function groupByCourse(checkins: Checkin[]): Map<string, Checkin[]> {
+  const map = new Map<string, Checkin[]>()
+  for (const c of checkins) {
+    const arr = map.get(c.course_id)
+    if (arr) arr.push(c)
+    else map.set(c.course_id, [c])
+  }
+  return map
+}
+
+/** 纯函数：算一组打卡的课时合计 */
+function sumHours(list: Checkin[] | undefined): number {
+  if (!list) return 0
+  return list.reduce((s, c) => s + Number(c.hours), 0)
+}
+
+/** 保留两位小数 */
+function round2(n: number): number {
+  return Math.round(n * 100) / 100
 }
 
 /** 导出需要的课程字段（不含客户端聚合的 used_hours 等，方便直接传云端原始行） */
@@ -67,6 +82,17 @@ export async function exportToExcel(
   courses: CourseRow[],
   checkins: Checkin[],
   meta?: ExportMeta,
+  /**
+   * 该宝贝的**全量**打卡记录（可选）。
+   *
+   * ⚠️ 必须传，否则按日期筛选后导出会算错：
+   *   checkins 是「本次导出（期间内）」的打卡，而 courses 是全量课程，
+   *   两者混算 → 「总购买课时」是全量、「已上课时」只有期间内
+   *   → 「总剩余课时」被系统性夸大，信息卡的「剩余课时」同样虚高。
+   *
+   * 不传时退化为「只按本次导出的数据统计」（口径自洽，但不含历史累计）。
+   */
+  allCheckins?: Checkin[],
 ): Promise<Blob> {
   // 运行时按需加载：exceljs 整包 ~900KB
   // 因为外部已经 import('@/utils/excel') 是动态的，所以这个静态 import 只在导出按钮被点击时才执行
@@ -75,13 +101,12 @@ export async function exportToExcel(
   wb.creator = 'kid-course-tracker'
   wb.created = new Date()
 
-  // 按课程分组打卡
-  const byCourseId = new Map<string, Checkin[]>()
-  for (const c of checkins) {
-    const arr = byCourseId.get(c.course_id)
-    if (arr) arr.push(c)
-    else byCourseId.set(c.course_id, [c])
-  }
+  // 按课程分组打卡：本次导出（期间内）
+  const byCourseId = groupByCourse(checkins)
+  // 全量分组：累计口径（真实已用 / 真实剩余）
+  const totalByCourseId = groupByCourse(
+    allCheckins && allCheckins.length ? allCheckins : checkins,
+  )
 
   const usedSheetNames = new Set<string>()
 
@@ -98,6 +123,13 @@ export async function exportToExcel(
 
     let r = 1
 
+    // 本期（本次导出范围）该课程已用
+    const periodUsed = sumHours(list)
+    // 该课程累计已用（全量口径；未传 allCheckins 时退化为本期）
+    const totalUsed = course ? sumHours(totalByCourseId.get(course.id)) : periodUsed
+    // 明细表的「累计已用」从「期间开始前的累计」起算，而不是从 0
+    let acc = Math.max(0, totalUsed - periodUsed)
+
     // 标题条（合并整行，深绿底白字）
     ws.mergeCells(`A${r}:E${r}`)
     const titleCell = ws.getCell(`A${r}`)
@@ -111,15 +143,14 @@ export async function exportToExcel(
 
     // 课程信息卡（合并整行，浅绿底）
     if (course) {
-      const used = sumHoursByCourse(list, course.id)
-      const remain = course.total_hours - used
+      const remain = round2(course.total_hours - totalUsed)
       const pph =
         course.total_hours > 0
           ? Math.round((course.total_amount / course.total_hours) * 100) / 100
           : 0
       const infoRows: string[] = [
         `机构：${course.institution || '—'}`,
-        `缴费金额：${formatMoney(course.total_amount)}      购买课时：${course.total_hours} 节      已上课时：${used} 节      剩余课时：${remain} 节`,
+        `缴费金额：${formatMoney(course.total_amount)}      购买课时：${course.total_hours} 节      累计已上课时：${totalUsed} 节      剩余课时：${remain} 节`,
         `单节均价：${formatMoney(pph)}      缴费日期：${course.paid_at}      到期日期：${course.expires_at ?? '—'}`,
         `标签：${course.tags || '—'}      备注：${course.note || '—'}`,
       ]
@@ -155,15 +186,15 @@ export async function exportToExcel(
 
     // 明细行（日期升序，累计已用/剩余）
     const rows = [...list].sort((a, b) => a.date.localeCompare(b.date))
-    let acc = 0
     const total = course?.total_hours ?? 0
     rows.forEach((c, i) => {
       acc += Number(c.hours)
       const row = ws.addRow({
         date: c.date,
         hours: c.hours,
-        used: acc,
-        remain: total - acc,
+        used: round2(acc),
+        // 孤儿打卡（课程已删）没有总课时，剩余无意义 → 显示 '—' 而不是负数
+        remain: course ? round2(total - acc) : '—',
         feedback: c.feedback,
       })
       row.height = 18
@@ -199,9 +230,20 @@ export async function exportToExcel(
     { header: '数值', key: 'v', width: 30 },
   ]
 
+  // 汇总口径：逐课程算「购买 / 累计已用 / 剩余」，三者自洽。
+  // ⚠️ 不用 checkins（期间内）算「已上课时」——那样会拿期间消耗去减全量购买，
+  //    导出的「总剩余课时」会系统性虚高。
+  const perCourse = courses.map((c) => {
+    const used = sumHours(totalByCourseId.get(c.id))
+    const total = Number(c.total_hours)
+    return { total, used, remain: Math.max(0, total - used) }
+  })
   const totalAmount = courses.reduce((s, c) => s + c.total_amount, 0)
-  const totalHours = courses.reduce((s, c) => s + c.total_hours, 0)
-  const usedHours = checkins.reduce((s, c) => s + Number(c.hours), 0)
+  const totalHours = perCourse.reduce((s, x) => s + x.total, 0)
+  const usedHours = perCourse.reduce((s, x) => s + x.used, 0)
+  const remainHours = perCourse.reduce((s, x) => s + x.remain, 0)
+  // 本期（本次导出范围）打卡课时 —— 单独一行，标明是期间口径
+  const periodHours = checkins.reduce((s, c) => s + Number(c.hours), 0)
 
   // 标题条
   ws3.mergeCells('A1:B1')
@@ -220,8 +262,9 @@ export async function exportToExcel(
   rows3.push(['导出科目数', `${courses.length} 门`])
   rows3.push(['总投入金额', formatMoney(totalAmount)])
   rows3.push(['总购买课时', `${totalHours} 节`])
-  rows3.push(['总已上课时', `${usedHours} 节`])
-  rows3.push(['总剩余课时', `${totalHours - usedHours} 节`])
+  rows3.push(['累计已上课时', `${usedHours} 节`])
+  rows3.push(['总剩余课时', `${remainHours} 节`])
+  rows3.push(['本期打卡课时', `${periodHours} 节`])
   rows3.forEach(([k, v], i) => {
     const row = ws3.addRow({ k, v })
     row.height = 20

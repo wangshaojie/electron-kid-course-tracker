@@ -27,6 +27,9 @@ const REPO = 'wangshaojie/electron-kid-course-tracker'
 const RELEASE_API = `https://api.github.com/repos/${REPO}/releases/latest`
 const LATEST_PAGE = `https://github.com/${REPO}/releases/latest`
 
+/** 下载安装包的超时（毫秒）—— 没有它，链路断流时会永远停在"正在下载" */
+const DOWNLOAD_TIMEOUT_MS = 120_000
+
 /** 给渲染端看的更新信息（轻量版，主进程手写下载不引第三方类型） */
 export interface UpdateInfo {
   /** 新版本号（不带 v 前缀） */
@@ -239,12 +242,36 @@ function downloadFile(url: string, dest: string, onProgress?: (downloaded: numbe
       const file = fs.createWriteStream(dest)
       const req = net.request({ method: 'GET', url })
       req.setHeader('User-Agent', 'Mozilla/5.0')
+      // ⚠️ 必须设超时（同文件的 httpGet 有 8s，这里原来没有）：
+      //    链路中途断流 / 服务器挂住时 Promise 永不 settle →
+      //    渲染端永远停在"正在下载 x%"，既没有进度也没有错误兜底，只能杀进程。
+      //    （Electron 的 net.ClientRequest 类型里没声明 setTimeout，这里显式收窄）
+      ;(req as unknown as { setTimeout: (ms: number, cb: () => void) => void }).setTimeout(
+        DOWNLOAD_TIMEOUT_MS,
+        () => {
+          try { req.abort() } catch { /* ignore */ }
+          try { file.close() } catch { /* ignore */ }
+          try { fs.unlinkSync(dest) } catch { /* ignore */ }
+          reject(new Error(`下载超时（${DOWNLOAD_TIMEOUT_MS / 1000}s）`))
+        },
+      )
       req.on('response', (res) => {
-        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
+        // 响应体阶段的空闲超时（已收到 header 但数据不再来）
+        ;(res as unknown as { setTimeout?: (ms: number, cb: () => void) => void }).setTimeout?.(
+          DOWNLOAD_TIMEOUT_MS,
+          () => {
+            try { file.close() } catch { /* ignore */ }
+            try { fs.unlinkSync(dest) } catch { /* ignore */ }
+            reject(new Error(`下载超时（${DOWNLOAD_TIMEOUT_MS / 1000}s）`))
+          },
+        )
+        const location = res.headers.location
+        const nextUrl = Array.isArray(location) ? location[0] : location
+        if (res.statusCode && res.statusCode >= 300 && res.statusCode < 400 && nextUrl) {
           // 跟随重定向
           file.close()
           try { fs.unlinkSync(dest) } catch { /* */ }
-          downloadFile(res.headers.location, dest, onProgress).then(resolve, reject)
+          downloadFile(nextUrl, dest, onProgress).then(resolve, reject)
           return
         }
         if (res.statusCode !== 200) {
@@ -253,7 +280,9 @@ function downloadFile(url: string, dest: string, onProgress?: (downloaded: numbe
           reject(new Error(`HTTP ${res.statusCode}`))
           return
         }
-        const total = parseInt(res.headers['content-length'] ?? '0', 10)
+        const lenHeader = res.headers['content-length']
+        const lenValue = Array.isArray(lenHeader) ? lenHeader[0] : lenHeader
+        const total = parseInt(lenValue ?? '0', 10)
         let downloaded = 0
         res.on('data', (chunk: Buffer) => {
           downloaded += chunk.length
@@ -268,7 +297,8 @@ function downloadFile(url: string, dest: string, onProgress?: (downloaded: numbe
           reject(e)
         })
         // 把 net.IncomingMessage 接到 fs.WriteStream
-        res.pipe(file)
+        // （Electron 的 IncomingMessage 类型里没声明 pipe，这里显式收窄）
+        ;(res as unknown as { pipe: (dest: NodeJS.WritableStream) => void }).pipe(file)
         file.on('finish', () => file.close(() => resolve(downloaded)))
       })
       req.on('error', (e) => {

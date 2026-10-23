@@ -6,7 +6,9 @@
     "moduleResolution": "bundler",
     "allowSyntheticDefaultImports": true,
     "strict": true,
+    "allowJs": true,
+    "checkJs": false,
     "types": ["node"]
   },
-  "include": ["vite.config.ts", "build-electron.mjs"]
+  "include": ["vite.config.mts", "build-electron.mjs"]
 }

@@ -8,6 +8,7 @@ import type { FormInstance } from 'element-plus'
 import type { Course, CourseInput } from '@/stores/courses'
 import { todayStr } from '@/utils/date'
 import { positiveNumber, dateRequired } from '@/utils/validators'
+import { errorText } from '@/utils/error'
 import { useCoursesStore } from '@/stores/courses'
 
 const props = defineProps<{
@@ -96,7 +97,7 @@ async function onSubmit() {
     emit('saved')
     emit('update:modelValue', false)
   } catch (e) {
-    ElMessage.error((e as Error).message)
+    ElMessage.error(errorText(e))
   } finally {
     submitting.value = false
   }

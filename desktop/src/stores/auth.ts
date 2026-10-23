@@ -173,11 +173,16 @@ export const useAuthStore = defineStore('auth', () => {
    * 已登录用户修改密码（必传旧密码）
    * 成功 = 自动 persistSession 替换 token（30 天计时重置）
    * 失败 = 返回中文错误，session 保持不变
+   *
+   * ⚠️ remember 不能再用默认值 true：
+   *   用户当初在登录页勾了「不记住我」（token 只在 sessionStorage），
+   *   改一次密码就被强制升级成 localStorage 30 天免登录 —— 违背用户选择。
+   *   这里默认从 localStorage['auth.remember'] 还原真实偏好。
    */
   async function changePassword(
     oldPassword: string,
     newPassword: string,
-    remember: boolean = true,
+    remember?: boolean,
   ): Promise<{ error: string | null }> {
     const r = await changePasswordApi(oldPassword, newPassword)
     if (!r.ok) return { error: r.error }
@@ -185,7 +190,7 @@ export const useAuthStore = defineStore('auth', () => {
     token.value = r.token
     user.value = { uid: r.uid, email: r.email }
     status.value = 'authenticated'
-    // 推断 remember 偏好（与登录保持一致）
+    // 推断 remember 偏好（与登录保持一致）：'0' = 用户当初选了「不记住我」
     const pref = (() => {
       try {
         return localStorage.getItem('auth.remember') !== '0'

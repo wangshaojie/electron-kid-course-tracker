@@ -23,6 +23,7 @@ import { refreshClientMeta } from '@/lib/cloudbase'
 // Element Plus 组件按需引入（unplugin-vue-components），
 // 但 ElConfigProvider 是个组件壳，locale 是普通对象，必须手动 import
 import zhCn from 'element-plus/es/locale/lang/zh-cn'
+import { errorText } from '@/utils/error'
 
 const route = useRoute()
 const auth = useAuthStore()
@@ -69,7 +70,7 @@ async function loadBusinessData() {
         await Promise.all([courses.refresh(), checkins.refresh()])
       }
     } catch (e: unknown) {
-      const msg = (e as Error)?.message ?? '加载数据失败'
+      const msg = errorText(e, '加载数据失败')
       initError.value = msg
       ElMessage.error(msg)
     } finally {

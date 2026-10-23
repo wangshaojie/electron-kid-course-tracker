@@ -28,10 +28,18 @@ function applyPreset(p: typeof preset.value) {
   }
   const now = new Date()
   const from = new Date(now)
-  if (p === 'month') from.setMonth(from.getMonth() - 1)
-  if (p === 'quarter') from.setMonth(from.getMonth() - 3)
-  if (p === 'year') from.setFullYear(from.getFullYear() - 1)
+  // ⚠️ 必须用 setDate 减天数，不能用 setMonth：
+  //    JS 的 setMonth 会做月末钳位（3/31 - 1 月 → 2/31 → 溢出成 3/03），
+  //    「近 30 天」实际只剩 28 天，整个 2 月被漏掉；季度档同理。
+  if (p === 'month') from.setDate(from.getDate() - 30)
+  if (p === 'quarter') from.setDate(from.getDate() - 90)
+  if (p === 'year') from.setDate(from.getDate() - 365)
   dateRange.value = [toDateStr(from), todayStr()]
+}
+
+/** 日期选择器变化：清空时回到「全部」，否则标题写"期间内"但数据其实是全量 */
+function onDateRangeChange(v: [string, string] | null | undefined) {
+  preset.value = v && v.length === 2 ? 'custom' : 'all'
 }
 
 function toDateStr(d: Date) {
@@ -80,11 +88,14 @@ const pieRows = computed<Array<{ name: string; value: number }>>(() => {
 })
 
 /**
- * 柱图数据：used = 期间内 hours；remain = total_hours - used
+ * 柱图数据：used = 期间内 hours；remain = 该课程**当前真实剩余**
+ *   - ⚠️ 原来 remain = total_hours - 期间内used，把「期间之前就已经上掉的课时」
+ *     也算进了"剩余"，数字虚高（堆叠柱看起来刚好到总课时，语义却是错的）。
+ *     courses store 的 used_hours 是该 child 全量打卡的聚合 → 真实剩余 = total_hours - used_hours
  *   - 只显示期间内有过打卡的课程（remain 截断到 0 防止出现负数）
  */
 const barRows = computed<Array<{ name: string; used: number; remain: number }>>(() => {
-  const acc = new Map<string, { name: string; used: number; total: number }>()
+  const acc = new Map<string, { name: string; used: number; total: number; totalUsed: number }>()
   for (const ck of filteredCheckins.value) {
     const course = courses.byId(ck.course_id)
     if (!course) continue
@@ -92,6 +103,7 @@ const barRows = computed<Array<{ name: string; used: number; remain: number }>>(
       name: course.name,
       used: 0,
       total: course.total_hours,
+      totalUsed: course.used_hours,
     }
     cur.used += ck.hours
     acc.set(ck.course_id, cur)
@@ -99,7 +111,7 @@ const barRows = computed<Array<{ name: string; used: number; remain: number }>>(
   return Array.from(acc.values()).map((r) => ({
     name: r.name,
     used: Math.round(r.used * 100) / 100,
-    remain: Math.max(0, Math.round((r.total - r.used) * 100) / 100),
+    remain: Math.max(0, Math.round((r.total - r.totalUsed) * 100) / 100),
   }))
 })
 
@@ -160,7 +172,7 @@ onMounted(() => {
           start-placeholder="开始"
           end-placeholder="结束"
           class="!w-72"
-          @change="preset = 'custom'"
+          @change="onDateRangeChange"
         />
         <div class="flex-1" />
         <span class="text-sm text-dark-soft">
@@ -192,7 +204,7 @@ onMounted(() => {
         </p>
       </div>
       <div class="glass-card p-5">
-        <h3 class="mb-3 font-bold text-dark-title">📊 {{ isAllTime ? '各课程课时消耗 vs 剩余' : '期间内各课程已用 vs 剩余' }}</h3>
+        <h3 class="mb-3 font-bold text-dark-title">📊 {{ isAllTime ? '各课程课时消耗 vs 剩余' : '期间内各课程消耗 vs 当前剩余' }}</h3>
         <div class="h-80">
           <HoursBarChart
             :rows="barRows"
@@ -205,7 +217,7 @@ onMounted(() => {
             购 {{ courses.totalHours }} 节 · 已用 {{ courses.usedHours }} 节 · 剩 {{ courses.remainHours }} 节
           </template>
           <template v-else>
-            期间内已用 {{ periodStats.hours }} 节 · 涉及 {{ barRows.length }} 门课
+            期间内已用 {{ periodStats.hours }} 节 · 涉及 {{ barRows.length }} 门课 · 剩余为当前真实剩余
           </template>
         </p>
       </div>

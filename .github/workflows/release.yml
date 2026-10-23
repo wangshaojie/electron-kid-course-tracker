@@ -80,6 +80,47 @@ jobs:
         shell: pwsh
         run: pnpm exec vue-tsc --noEmit
 
+      # ---------- 先算版本号 + 断言，再 build（失败要快，别白跑 10 分钟打包）----------
+      # 决定 release 用哪个 tag：
+      #   - push v* 触发：tag 就是 github.ref_name（如 v0.2.1）
+      #   - 手动 Run workflow：tag 取 inputs.version（用户输入）
+      #   - 如果 v* push 进来但没传 version input（不应该发生，但兜底），退回 ref_name
+      - name: Resolve release version
+        id: version
+        shell: pwsh
+        run: |
+          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
+            "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          } else {
+            # 去掉 ref_name 前缀 refs/tags/ 得到 v0.2.1
+            $tag = "${{ github.ref_name }}".Replace("refs/tags/", "")
+            "version=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+          }
+
+      - name: Resolve version (without 'v' prefix) for file glob
+        id: pkgver
+        shell: pwsh
+        run: |
+          $tag = "${{ steps.version.outputs.version }}" -replace '^v', ''
+          "pkgver=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
+
+      # electron-builder 按 **package.json 的 version** 命名产物，
+      # 而上传用的 glob 是按 **tag** 拼的。两者不一致时：
+      #   - glob 匹配不到文件 → fail_on_unmatched_files 让发版在 10 分钟后才失败
+      #   - 用户端 updater 用 tag 比对版本号 → 装了版本不变的包，还无限提示"有新版本"
+      - name: Assert tag matches package.json version
+        working-directory: desktop
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $tag = "${{ steps.version.outputs.version }}" -replace '^v', ''
+          $pkg = (Get-Content package.json -Raw | ConvertFrom-Json).version
+          if ($tag -ne $pkg) {
+            Write-Error "tag ($tag) 与 desktop/package.json version ($pkg) 不一致 —— electron-builder 会按 package.json 版本命名产物，产物名会对不上"
+            exit 1
+          }
+          Write-Host "OK: tag 与 package.json version 一致 ($pkg)"
+
       # ============================================================
       # 渲染端 + 主进程 build（一次完成，env 全程透传）
       # 注意：vite-plugin-electron/simple 会在 electron-builder 阶段
@@ -94,6 +135,33 @@ jobs:
           VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
           VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
         run: pnpm run build
+
+      # 构建产物里必须真的有非空 API 地址：
+      # GitHub Secret 被删时 ${{ secrets.X }} 解析成空串，Vite 里 process.env
+      # 会**无条件覆盖** .env 文件（空串也覆盖）→ 产物地址为空，CI 却全绿。
+      # （v0.5.28 只让用户看到可读错误页，没有拦住 CI 放行）
+      - name: Assert API URLs baked into bundle
+        working-directory: desktop
+        shell: pwsh
+        env:
+          VITE_AUTH_OTP_URL: ${{ secrets.VITE_AUTH_OTP_URL }}
+          VITE_DATA_API_URL: ${{ secrets.VITE_DATA_API_URL }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if (-not $env:VITE_AUTH_OTP_URL -or -not $env:VITE_DATA_API_URL) {
+            Write-Error "GitHub Secret VITE_AUTH_OTP_URL / VITE_DATA_API_URL 为空 —— secret 被删时会解析成空串并覆盖 .env 文件，产物里的接口地址会变成空值"
+            exit 1
+          }
+          $bundle = Get-ChildItem dist\assets\*.js -ErrorAction SilentlyContinue
+          if (-not $bundle) { Write-Error "dist\assets 里没有产物 js"; exit 1 }
+          foreach ($u in @($env:VITE_AUTH_OTP_URL, $env:VITE_DATA_API_URL)) {
+            $hit = $bundle | Select-String -SimpleMatch -Pattern $u
+            if (-not $hit) {
+              Write-Error "产物里找不到 $u —— 检查 build 步骤的 env 是否透传"
+              exit 1
+            }
+          }
+          Write-Host "OK: 产物内含两个 API 地址"
 
       # 产物改名 + electron-builder 二次 build 时也要带 env，
       # 否则 dist 里的 chunk 会带上错误的占位符
@@ -125,29 +193,6 @@ jobs:
         run: |
           Write-Host "=== release/ ==="
           Get-ChildItem -Path release -Recurse -File | Select-Object FullName, Length | Format-Table -AutoSize
-
-      # 决定 release 用哪个 tag：
-      #   - push v* 触发：tag 就是 github.ref_name（如 v0.2.1）
-      #   - 手动 Run workflow：tag 取 inputs.version（用户输入）
-      #   - 如果 v* push 进来但没传 version input（不应该发生，但兜底），退回 ref_name
-      - name: Resolve release version
-        id: version
-        shell: pwsh
-        run: |
-          if ("${{ github.event_name }}" -eq "workflow_dispatch") {
-            "version=${{ inputs.version }}" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          } else {
-            # 去掉 ref_name 前缀 refs/tags/ 得到 v0.2.1
-            $tag = "${{ github.ref_name }}".Replace("refs/tags/", "")
-            "version=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
-          }
-
-      - name: Resolve version (without 'v' prefix) for file glob
-        id: pkgver
-        shell: pwsh
-        run: |
-          $tag = "${{ steps.version.outputs.version }}" -replace '^v', ''
-          "pkgver=$tag" | Out-File -FilePath $env:GITHUB_OUTPUT -Append -Encoding utf8
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2

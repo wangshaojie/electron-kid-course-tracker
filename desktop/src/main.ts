@@ -95,15 +95,14 @@ async function bootstrap() {
   mark('auth.bootstrap')
 
   // 调试日志：方便排查"重启又被弹回登录页"
+  // ⚠️ 不要打印 JWT / 邮箱内容：生产包虽然默认不开 DevTools，但日志会进
+  //    userData/boot.log（用户可查看、可外发），泄露登录凭证没有意义。
   // eslint-disable-next-line no-console
   console.log('[main] bootstrap result', {
     hasJwt: !!auth.token,
     hasUser: !!auth.user,
     isAuthenticated: auth.isAuthenticated,
     status: auth.status,
-    ls_jwt: localStorage.getItem('auth.jwt')?.slice(0, 30),
-    ls_user: localStorage.getItem('auth.user'),
-    ss_jwt: sessionStorage.getItem('auth.jwt')?.slice(0, 30),
   })
 
   // 2) 等路由首次走完（isReady 只在 status=bootstrapping 时放行）

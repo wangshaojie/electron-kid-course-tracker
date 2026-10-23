@@ -21,6 +21,6 @@
     },
     "types": ["node", "vite/client"]
   },
-  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/env.d.ts"],
+  "include": ["src/**/*.ts", "src/**/*.tsx", "src/**/*.vue", "src/env.d.ts", "electron/**/*.ts"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -9,6 +9,7 @@ Thumbs.db
 .idea
 .vscode
 .tsconfig.*.local.json
+*.tsbuildinfo
 
 # 密钥 / 本地配置（严禁提交）
 .env

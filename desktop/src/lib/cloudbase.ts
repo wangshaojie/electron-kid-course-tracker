@@ -39,6 +39,87 @@ export const AUTH_OTP_URL = authOtpUrl || ''
 export const DATA_API_URL = dataApiUrl || ''
 
 // ==================== 客户端元信息 ====================
+
+/**
+ * 网络请求超时（毫秒）
+ * --------------------------------------------------------------
+ * 之前所有 fetch 都没有超时：网络挂死（连上了但不下数据 / 代理黑洞）时
+ * Promise 永不 settle → 界面永远停在 loading，用户只能杀进程。
+ */
+const FETCH_TIMEOUT_MS = 20_000
+
+/** 幂等方法的最大额外重试次数 */
+const MAX_RETRY = 2
+/** 重试基础间隔（毫秒），逐次递增 */
+const RETRY_BASE_MS = 600
+/**
+ * 可安全重试的 HTTP 方法（重复执行不会产生副作用）
+ * ⚠️ POST 一律不重试，重试会造成实质性问题：
+ *      /send    → 发两封验证码邮件 + 撞上 60 秒限流
+ *      /verify  → 验证码已被消费，重试必然失败
+ *      /login   → 密码错误时被后端重复计入失败次数（5 次就锁 15 分钟）
+ */
+const IDEMPOTENT_METHODS = new Set(['GET', 'HEAD', 'OPTIONS', 'PATCH', 'DELETE'])
+
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms))
+}
+
+/** 带超时的单次 fetch */
+function fetchWithTimeout(url: string, init: RequestInit = {}): Promise<Response> {
+  return fetch(url, { ...init, signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) })
+}
+
+/**
+ * 带超时 + 自动重试的 fetch
+ * --------------------------------------------------------------
+ * 为什么需要重试：跨域请求偶尔会被本机代理 / 网络瞬时掐断，Chromium 直接抛
+ * `TypeError: Failed to fetch`（后端根本没收到这个请求）。原来一次失败就是
+ * 永久失败，用户只能看着「网络连接失败」反复重登。
+ * 实测日志：2026-10-23 13:54:03 应用启动时 3 个 data-api 请求全部 Failed to fetch，
+ * 同一时刻 auth 登录也失败；后端 health 200 / CORS 正常，属瞬时链路抖动。
+ */
+async function fetchResilient(url: string, init: RequestInit = {}): Promise<Response> {
+  const method = (init.method || 'GET').toUpperCase()
+  const attempts = IDEMPOTENT_METHODS.has(method) ? MAX_RETRY + 1 : 1
+  let lastErr: unknown
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await fetchWithTimeout(url, init)
+    } catch (e) {
+      lastErr = e
+      const name = (e as { name?: string })?.name
+      // 超时不重试：已经等了 20 秒，再等只会让用户等更久
+      if (name === 'TimeoutError' || name === 'AbortError') throw e
+      if (i < attempts - 1) await sleep(RETRY_BASE_MS * (i + 1))
+    }
+  }
+  throw lastErr
+}
+
+/** 由错误信息推断网络故障，并给出可执行的下一步 */
+function networkHintFromMessage(msg?: string): string {
+  const m = String(msg || '')
+  if (/timeout|timed out|aborted/i.test(m)) return '网络请求超时，请检查网络后重试'
+  if (/failed to fetch|networkerror|load failed|connection refused|econnreset/i.test(m)) {
+    // 这台机器开着系统代理（v2rayN/xray），代理规则没放行该域名时正是这个报错
+    return '无法连接到服务器，请检查网络；若使用代理/VPN，需放行 api.240730.xyz'
+  }
+  return '网络连接失败，请检查网络后重试'
+}
+
+/** 统一网络错误文案（区分超时 / 离线 / 连接失败） */
+function networkErrorText(e: unknown): string {
+  const name = (e as { name?: string })?.name
+  if (name === 'TimeoutError' || name === 'AbortError') {
+    return '网络请求超时，请检查网络后重试'
+  }
+  if (typeof navigator !== 'undefined' && navigator.onLine === false) {
+    return '网络未连接，请先联网后重试'
+  }
+  return networkHintFromMessage((e as { message?: string })?.message)
+}
+
 // App 启动时由 App.vue/auth.bootstrap 调用 refreshClientMeta()，从主进程读当前版本。
 // 之后所有出口（dataApi / auth-otp fetch）自动带 X-Client-Version header。
 // dev 模式 window.kidfs 不存在（preload 未挂载），自动回退到 ''。
@@ -162,7 +243,19 @@ export function getActiveUser(): SessionUser | null {
 
 /** 拿当前用户 uid（写 PG 业务表 owner_id 用） */
 export function getActiveUid(): string | null {
-  return localStorage.getItem(UID_KEY) ?? sessionStorage.getItem(UID_KEY)
+  const raw = localStorage.getItem(UID_KEY) ?? sessionStorage.getItem(UID_KEY)
+  if (!raw) return null
+  // ⚠️ 不能直接返回 raw：UID_KEY 是 writeLS 用 JSON.stringify 写进去的（带引号），
+  //    raw 读出来是 '"abc"' 而不是 'abc'，与 getActiveUser().uid 不一致。
+  //    兼容历史直接 setItem 存原样的场景（同 getActiveJwt 的处理方式）。
+  let t = raw
+  try {
+    const parsed = JSON.parse(raw) as unknown
+    if (typeof parsed === 'string') t = parsed
+  } catch {
+    /* raw 不是 JSON，原样使用 */
+  }
+  return t || null
 }
 
 /** 写登录态（verify 成功时调）
@@ -177,6 +270,14 @@ export function persistSession(token: string, user: SessionUser, remember: boole
   s.set(UID_KEY, user.uid)
   try {
     localStorage.setItem('auth.remember', remember ? '1' : '0')
+    // 「不记住我」：清掉 localStorage 里的旧副本。
+    // 否则 getActiveJwt()（localStorage 优先）会读到上一次「记住我」留下的陈旧 token，
+    // 导致改密 / 重新登录后仍用旧 token 发请求 → 401 invalid_token。
+    if (!remember) {
+      localStorage.removeItem(JWT_KEY)
+      localStorage.removeItem(USER_KEY)
+      localStorage.removeItem(UID_KEY)
+    }
   } catch {
     /* ignore */
   }
@@ -241,7 +342,15 @@ const OTP_ERROR_MAP: Record<string, string> = {
  * 把后端 error / httpStatus 翻译成中文
  * 永远不返回后端原始英文，确保用户看到的是中文
  */
-export function translateOtpError(rawError: string | null | undefined, httpStatus?: number): string {
+export function translateOtpError(
+  rawError: string | null | undefined,
+  httpStatus?: number,
+  detail?: string,
+): string {
+  if (rawError === 'network_error') {
+    // 网络层失败：给出可执行的下一步，而不是一句笼统的「稍后重试」
+    return networkHintFromMessage(detail)
+  }
   if (!rawError) {
     if (httpStatus === 429) return OTP_ERROR_MAP.too_many_requests!
     if (httpStatus && httpStatus >= 500) return OTP_ERROR_MAP.internal!
@@ -264,17 +373,17 @@ export function translateOtpError(rawError: string | null | undefined, httpStatu
 export async function otpSend(email: string): Promise<SendResult> {
   let r: Response
   try {
-    r = await fetch(`${AUTH_OTP_URL}/send`, {
+    r = await fetchResilient(`${AUTH_OTP_URL}/send`, {
       method: 'POST',
       headers: clientHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ email }),
     })
   } catch (e) {
-    return { ok: false, error: '网络连接失败，请检查网络后重试' }
+    return { ok: false, error: networkErrorText(e) }
   }
   const j = await r.json().catch(() => ({}))
   if (!r.ok || j.error) {
-    return { ok: false, error: translateOtpError(j.error, r.status) }
+    return { ok: false, error: translateOtpError(j.error, r.status, j.detail) }
   }
   return { ok: true, id: j.id }
 }
@@ -282,17 +391,17 @@ export async function otpSend(email: string): Promise<SendResult> {
 export async function otpVerify(email: string, code: string): Promise<VerifyResult> {
   let r: Response
   try {
-    r = await fetch(`${AUTH_OTP_URL}/verify`, {
+    r = await fetchResilient(`${AUTH_OTP_URL}/verify`, {
       method: 'POST',
       headers: clientHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify({ email, code }),
     })
   } catch (e) {
-    return { ok: false, error: '网络连接失败，请检查网络后重试' }
+    return { ok: false, error: networkErrorText(e) }
   }
   const j = await r.json().catch(() => ({}))
   if (!r.ok || j.error) {
-    return { ok: false, error: translateOtpError(j.error, r.status) }
+    return { ok: false, error: translateOtpError(j.error, r.status, j.detail) }
   }
   return { ok: true, token: j.token, uid: j.uid, email: j.email, role: (j.role === 'admin' ? 'admin' : 'user') }
 }
@@ -308,13 +417,16 @@ type PasswordSetResult = { ok: true } | { ok: false; error: string }
 async function postOtp(path: string, body: Record<string, unknown>): Promise<{ status: number; json: any }> {
   let r: Response
   try {
-    r = await fetch(`${AUTH_OTP_URL}${path}`, {
+    r = await fetchResilient(`${AUTH_OTP_URL}${path}`, {
       method: 'POST',
       headers: clientHeaders({ 'Content-Type': 'application/json' }),
       body: JSON.stringify(body),
     })
   } catch (e) {
-    return { status: 0, json: { error: 'network_error' } }
+    // ⚠️ 原始原因必须落日志：之前 auth 链路完全吞掉异常，
+    //    界面上只有一句「网络连接失败」，无法区分「代理没放行 / DNS 挂了 / CORS 被拦」。
+    console.warn('[auth-otp] network_error', path, (e as Error)?.message ?? String(e))
+    return { status: 0, json: { error: 'network_error', detail: (e as Error)?.message ?? String(e) } }
   }
   const j = await r.json().catch(() => ({}))
   return { status: r.status, json: j }
@@ -324,7 +436,7 @@ async function postOtp(path: string, body: Record<string, unknown>): Promise<{ s
 export async function passwordLogin(email: string, password: string): Promise<PasswordLoginResult> {
   const { status, json } = await postOtp('/login', { email, password })
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return {
     ok: true,
@@ -339,7 +451,7 @@ export async function passwordLogin(email: string, password: string): Promise<Pa
 export async function setPassword(email: string, code: string, password: string): Promise<PasswordSetResult> {
   const { status, json } = await postOtp('/set-password', { email, code, password })
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return { ok: true }
 }
@@ -353,7 +465,7 @@ export async function setPassword(email: string, code: string, password: string)
 export async function setPasswordWithAuth(email: string, password: string): Promise<PasswordSetResult> {
   const { status, json } = await postOtpAuth('/set-password', { email, password })
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return { ok: true }
 }
@@ -362,7 +474,7 @@ export async function setPasswordWithAuth(email: string, password: string): Prom
 export async function resetPassword(email: string, code: string, password: string): Promise<PasswordSetResult> {
   const { status, json } = await postOtp('/reset-password', { email, code, password })
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return { ok: true }
 }
@@ -377,7 +489,7 @@ type RegisterResult =
 export async function register(email: string, code: string, password: string): Promise<RegisterResult> {
   const { status, json } = await postOtp('/register', { email, code, password })
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return {
     ok: true,
@@ -403,13 +515,14 @@ async function postOtpAuth(path: string, body: Record<string, unknown>): Promise
   if (!tok) return { status: 401, json: { error: 'no_bearer' } }
   let r: Response
   try {
-    r = await fetch(`${AUTH_OTP_URL}${path}`, {
+    r = await fetchResilient(`${AUTH_OTP_URL}${path}`, {
       method: 'POST',
       headers: clientHeaders({ 'Content-Type': 'application/json', Authorization: `Bearer ${tok}` }),
       body: JSON.stringify(body),
     })
-  } catch {
-    return { status: 0, json: { error: 'network_error' } }
+  } catch (e) {
+    console.warn('[auth-otp] network_error', path, (e as Error)?.message ?? String(e))
+    return { status: 0, json: { error: 'network_error', detail: (e as Error)?.message ?? String(e) } }
   }
   const j = await r.json().catch(() => ({}))
   return { status: r.status, json: j }
@@ -421,12 +534,13 @@ async function getOtpAuth(path: string): Promise<{ status: number; json: any }> 
   if (!tok) return { status: 401, json: { error: 'no_bearer' } }
   let r: Response
   try {
-    r = await fetch(`${AUTH_OTP_URL}${path}`, {
+    r = await fetchResilient(`${AUTH_OTP_URL}${path}`, {
       method: 'GET',
       headers: clientHeaders({ Authorization: `Bearer ${tok}` }),
     })
-  } catch {
-    return { status: 0, json: { error: 'network_error' } }
+  } catch (e) {
+    console.warn('[auth-otp] network_error', path, (e as Error)?.message ?? String(e))
+    return { status: 0, json: { error: 'network_error', detail: (e as Error)?.message ?? String(e) } }
   }
   const j = await r.json().catch(() => ({}))
   return { status: r.status, json: j }
@@ -443,7 +557,7 @@ export async function changePassword(oldPassword: string, newPassword: string): 
     new_password: newPassword,
   })
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return {
     ok: true,
@@ -462,7 +576,7 @@ export async function changePassword(oldPassword: string, newPassword: string): 
 export async function getPasswordStatus(): Promise<PasswordStatusResult> {
   const { status, json } = await getOtpAuth('/password-status')
   if (status >= 400 || json.error) {
-    return { ok: false, error: translateOtpError(json.error, status) }
+    return { ok: false, error: translateOtpError(json.error, status, json.detail) }
   }
   return {
     ok: true,
@@ -493,7 +607,7 @@ export async function dataApi<T = unknown>(
   }
   let r: Response
   try {
-    r = await fetch(`${DATA_API_URL}${subPath}`, {
+    r = await fetchResilient(`${DATA_API_URL}${subPath}`, {
       method,
       headers: clientHeaders({
         'Content-Type': 'application/json',
@@ -518,6 +632,42 @@ export async function dataApi<T = unknown>(
 }
 
 /**
+ * data-api 错误码 → 中文
+ * ⚠️ 之前 businessApi 直接抛 `${r.error}: ${r.detail}`，用户看到的是
+ *    "db_error: connection terminated unexpectedly" 这种英文 / PG 内部信息。
+ *    现在统一翻译；detail 只进 console 便于排查，不进用户界面。
+ */
+const DATA_API_ERROR_MAP: Record<string, string> = {
+  no_active_jwt: '登录状态已失效，请重新登录',
+  invalid_token: '登录状态已失效，请重新登录',
+  missing_authorization: '登录状态已失效，请重新登录',
+  network_error: '网络连接失败，请检查网络后重试',
+  unknown_table: '请求的数据不存在',
+  bad_query: '查询参数不合法',
+  not_found: '记录不存在或已被删除',
+  method_not_allowed: '不支持的操作',
+  empty_payload: '没有需要更新的内容',
+  db_error: '服务暂时不可用，请稍后重试',
+  internal: '服务异常，请稍后重试',
+}
+
+export function translateDataApiError(rawError: string | null | undefined, detail?: string): string {
+  if (detail) console.warn('[data-api]', rawError, detail)
+  if (!rawError) return '操作失败，请稍后重试'
+  if (rawError === 'network_error') {
+    return networkHintFromMessage(detail)
+  }
+  if (DATA_API_ERROR_MAP[rawError]) {
+    // PG 约束冲突（金额/课时必须 > 0 的 CHECK）给更具体的提示
+    if (rawError === 'db_error' && detail && /check constraint|violates/i.test(detail)) {
+      return '数据不合法：金额、课时必须大于 0'
+    }
+    return DATA_API_ERROR_MAP[rawError]!
+  }
+  return '操作失败，请稍后重试'
+}
+
+/**
  * 业务 API：失败直接 throw（store 保持现有 `throw error` 行为不变），
  * 成功返回后端响应体里的 data 载荷（即 { ok, data } 里的 data）
  */
@@ -528,8 +678,7 @@ export async function businessApi<T = unknown>(
 ): Promise<T> {
   const r = await dataApi<{ ok: true; data: T }>(method, subPath, body)
   if (!r.ok) {
-    const msg = r.detail ? `${r.error}: ${r.detail}` : r.error
-    throw new Error(msg || `http_${r.status}`)
+    throw new Error(translateDataApiError(r.error, r.detail))
   }
   return r.data.data
 }

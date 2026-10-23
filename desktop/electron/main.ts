@@ -45,11 +45,19 @@ function createWindow() {
   // 转发渲染端 console 到主进程 stdout（dev 时方便看错）
   // 同时把渲染端 log 落到 userData/boot.log，排查"白屏/启动慢"时用
   const bootLogPath = path.join(app.getPath('userData'), 'boot.log')
+  const prevLogPath = path.join(app.getPath('userData'), 'boot.prev.log')
   const writeBootLog = (line: string) => {
     fsSync.appendFile(bootLogPath, line + '\n', () => {})
   }
-  // 启动时清空上次的 log
-  try { fsSync.writeFileSync(bootLogPath, '') } catch {}
+  // 启动时把上次的 log 轮换成 boot.prev.log。
+  // ⚠️ 原来这里是 writeFileSync(bootLogPath, '') 直接清空 —— 但白屏/崩溃现场
+  //    恰恰发生在"用户重启前"，清空正好把最该看的证据抹掉了。改成保留上一轮。
+  try {
+    if (fsSync.existsSync(bootLogPath)) {
+      fsSync.copyFileSync(bootLogPath, prevLogPath)
+      fsSync.writeFileSync(bootLogPath, '')
+    }
+  } catch { /* ignore */ }
   mainWindow.webContents.on('console-message', (_e, level, msg, line, src) => {
     const tag = ['VERBOSE', 'INFO', 'WARN', 'ERROR'][level] ?? 'LOG'
     const line2 = `[${new Date().toISOString()}] [renderer ${tag}] ${msg} (${src}:${line})`
@@ -57,11 +65,18 @@ function createWindow() {
     writeBootLog(line2)
   })
   mainWindow.webContents.on('render-process-gone', (_e, details) => {
-    console.error('[renderer crash]', details)
+    // 崩溃信息也要落盘：打包后没有 stdout，console.error 用户根本看不到
+    const line = `[${new Date().toISOString()}] [renderer crash] ${JSON.stringify(details)}`
+    console.error(line)
+    writeBootLog(line)
   })
 
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url)
+    // ⚠️ 只放行 http(s)：原来任意 url 都直接 shell.openExternal，
+    //    file:// / 自定义协议会被外部程序接管（与 ipcMain 侧的校验保持一致）
+    if (/^https?:\/\//i.test(url)) {
+      void shell.openExternal(url)
+    }
     return { action: 'deny' }
   })
 
@@ -72,7 +87,25 @@ function createWindow() {
   }
 }
 
+/**
+ * 单实例锁
+ * --------------------------------------------------------------
+ * 没有锁的话：多开实例 → 互相踩 boot.log、重复查更新、重复下载安装包。
+ * 拿到锁的第二个实例会立刻退出，并把已有窗口顶到前面。
+ */
+const isPrimaryInstance = app.requestSingleInstanceLock()
+if (!isPrimaryInstance) {
+  app.quit()
+} else {
+  app.on('second-instance', () => {
+    if (!mainWindow) return
+    if (mainWindow.isMinimized()) mainWindow.restore()
+    mainWindow.focus()
+  })
+}
+
 app.whenReady().then(() => {
+  if (!isPrimaryInstance) return
   registerFsHandlers()
   // 打开外链（更新提示的"前往下载"按钮）
   ipcMain.handle('shell:openExternal', async (_e, url: string) => {

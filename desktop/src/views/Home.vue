@@ -66,6 +66,16 @@ function quickCheckin(id: string) {
   checkinDialogOpen.value = true
 }
 
+/**
+ * 通用「快速上课记录」入口
+ * ⚠️ 要先清掉 preselectedId：否则点过某门课的「打卡」之后，
+ *    再点这个按钮仍会沿用上次那门课（不是默认课程）。
+ */
+function openQuickCheckin() {
+  preselectedId.value = null
+  checkinDialogOpen.value = true
+}
+
 function viewAll() {
   void router.push('/checkins')
 }
@@ -169,7 +179,7 @@ async function signOut() {
             <button
               class="btn-dark-primary w-full glow-ring"
               style="justify-content: flex-start; padding: 11px 14px;"
-              @click="checkinDialogOpen = true"
+              @click="openQuickCheckin"
             >
               🎯 快速上课记录
             </button>
