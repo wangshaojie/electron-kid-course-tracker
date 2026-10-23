@@ -59,8 +59,11 @@ const BUSINESS_TABLES = {
     dateRange: true,
   },
   user_prefs: {
-    select: ['owner_id', 'active_child_id', 'created_at', 'updated_at'],
-    write: ['active_child_id', 'updated_at'],
+    // ⚠️ theme 必须留在 write 白名单里，否则 persistRemote 会被 pickWriteFields
+    //    静默丢弃（PATCH 仍返回 200），导致「多设备主题同步」永远写不进去，
+    //    而 syncFromCloud 又会拿云端默认值 'system' 覆盖用户本地选择。
+    select: ['owner_id', 'active_child_id', 'theme', 'created_at', 'updated_at'],
+    write: ['active_child_id', 'theme', 'updated_at'],
     filters: [],
     orders: ['updated_at'],
   },
@@ -72,6 +75,34 @@ function pickWriteFields(body, def) {
     if (body[k] !== undefined) out[k] = body[k]
   }
   return out
+}
+
+/**
+ * 解析 select 查询参数 → 安全的列名列表
+ * --------------------------------------------------------------
+ * 之前 `?select=id` 只是个被忽略的死参数（SQL 一直是 SELECT *），
+ * 前端多处注释说"用 select=id 少取字段"实际没生效。
+ * 现在真正按白名单裁剪列，列名只可能来自 def.select → 无注入面。
+ *
+ * @returns {{ cols: string[] } | { error: string }}
+ */
+function resolveSelectColumns(def, rawSelect) {
+  const all = def.select
+  if (rawSelect === undefined || rawSelect === null || rawSelect === '') {
+    return { cols: all }
+  }
+  const requested = String(rawSelect)
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+  if (!requested.length) return { cols: all }
+  for (const c of requested) {
+    if (!all.includes(c)) {
+      return { error: `invalid select column: ${c}` }
+    }
+  }
+  // 保持白名单里的原始顺序，避免 SELECT 列顺序随请求参数乱跳
+  return { cols: all.filter((c) => requested.includes(c)) }
 }
 
 const cleanUid = (v) => (typeof v === 'string' ? v.replace(/^"+|"+$/g, '') : v)
@@ -89,16 +120,27 @@ async function handleBusiness(req, res, table, id, searchParams) {
   try {
     // ---- 查询 ----
     if (req.method === 'GET') {
+      const sp = Object.fromEntries(searchParams.entries())
+      // select 参数真正生效（列名只可能来自 def.select 白名单 → 无注入面）
+      const sel = resolveSelectColumns(def, sp.select)
+      if (sel.error) {
+        return sendJson(res, 400, { error: 'bad_query', detail: sel.error })
+      }
+      const colsSql = sel.cols.join(', ')
+
       if (id) {
+        // ⚠️ user_prefs 没有 id 列（owner_id 是主键）→ 按 id 查会直接报 SQL 错
+        if (!def.select.includes('id')) {
+          return sendJson(res, 404, { error: 'not_found', detail: `${table}/${id}` })
+        }
         const rows = await sql`
-          SELECT * FROM ${sql(table)} WHERE owner_id = ${uid} AND id = ${id} LIMIT 1
+          SELECT ${sql(sel.cols)} FROM ${sql(table)} WHERE owner_id = ${uid} AND id = ${id} LIMIT 1
         `
         if (!rows.length) return sendJson(res, 404, { error: 'not_found', detail: `${table}/${id}` })
         return sendJson(res, 200, { ok: true, data: rows[0] })
       }
 
       // 列表：解析查询参数
-      const sp = Object.fromEntries(searchParams.entries())
       const order = sp.order
       if (order && !def.orders.includes(order)) {
         return sendJson(res, 400, { error: 'bad_query', detail: `invalid order column: ${order}` })
@@ -132,7 +174,7 @@ async function handleBusiness(req, res, table, id, searchParams) {
       const orderSql = order ? `ORDER BY ${order} ${asc ? 'ASC' : 'DESC'}` : ''
 
       const rows = await sql.query(
-        `SELECT * FROM ${table} WHERE ${whereClauses.join(' AND ')} ${orderSql}`,
+        `SELECT ${colsSql} FROM ${table} WHERE ${whereClauses.join(' AND ')} ${orderSql}`,
         params,
       )
       return sendJson(res, 200, { ok: true, data: rows })
@@ -158,6 +200,13 @@ async function handleBusiness(req, res, table, id, searchParams) {
     if (req.method === 'PATCH') {
       const payload = pickWriteFields(body, def)
       if (id) {
+        // ⚠️ 空 payload → setClauses 为空 → SQL 变成 "UPDATE t SET  WHERE ..." → 500
+        if (!Object.keys(payload).length) {
+          return sendJson(res, 400, { error: 'empty_payload', detail: '没有可更新的字段' })
+        }
+        if (!def.select.includes('id')) {
+          return sendJson(res, 404, { error: 'not_found', detail: `${table}/${id}` })
+        }
         const setClauses = Object.keys(payload).map((k, idx) => `${k} = $${idx + 1}`).join(', ')
         const values = [...Object.values(payload), uid, id]
         const rows = await sql.query(
@@ -170,6 +219,10 @@ async function handleBusiness(req, res, table, id, searchParams) {
       // 无 id = 按 owner_id upsert（user_prefs）
       const existing = await sql`SELECT * FROM ${sql(table)} WHERE owner_id = ${uid} LIMIT 1`
       if (existing.length) {
+        // 空 payload → 不动数据，直接回当前行（避免 SET 为空导致 SQL 语法错）
+        if (!Object.keys(payload).length) {
+          return sendJson(res, 200, { ok: true, data: existing[0] })
+        }
         const setClauses = Object.keys(payload).map((k, idx) => `${k} = $${idx + 1}`).join(', ')
         const values = [...Object.values(payload), uid]
         const rows = await sql.query(
@@ -191,7 +244,12 @@ async function handleBusiness(req, res, table, id, searchParams) {
 
     // ---- 删除 ----
     if (req.method === 'DELETE' && id) {
-      const rows = await sql`DELETE FROM ${sql(table)} WHERE owner_id = ${uid} AND id = ${id} RETURNING id`
+      // ⚠️ user_prefs 没有 id 列 → 按 id 删会直接报 SQL 错
+      if (!def.select.includes('id')) {
+        return sendJson(res, 404, { error: 'not_found', detail: `${table}/${id}` })
+      }
+      // RETURNING owner_id：所有业务表都有 owner_id 列，user_prefs 没有 id
+      const rows = await sql`DELETE FROM ${sql(table)} WHERE owner_id = ${uid} AND id = ${id} RETURNING owner_id`
       return sendJson(res, 200, { ok: true, deleted: rows.length })
     }
 

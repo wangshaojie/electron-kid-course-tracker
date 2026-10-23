@@ -50,7 +50,9 @@ const LOGIN_LOCK_MS = 15 * 60 * 1000
 const loginFails = new Map()
 
 function genCode() {
-  return String(Math.floor(Math.random() * 1_000_000)).padStart(6, '0')
+  // ⚠️ 不能用 Math.random()：不是密码学安全随机数，OTP 的安全性依赖它
+  // crypto.randomInt 是 CSPRNG，且没有 modulo bias
+  return String(crypto.randomInt(0, 1_000_000)).padStart(6, '0')
 }
 function genSalt() {
   return crypto.randomBytes(16).toString('hex')
@@ -113,6 +115,32 @@ function rateLimitEmail(email) {
   return true
 }
 
+/**
+ * 清理进程内 Map 的过期条目
+ * --------------------------------------------------------------
+ * lastSendByIp / lastSendByEmail / loginFails 都是进程级 Map，
+ * 原来只有"命中上限"才写、从不删除 → 长期运行的实例会无限膨胀。
+ * 每次发码/登录时顺手扫一遍，开销可忽略。
+ */
+function sweepInMemoryMaps() {
+  const now = Date.now()
+  // IP 限流：60 秒窗口外的条目没用了
+  const ipCutoff = now - Math.max(RATE_LIMIT_MS, 60_000)
+  for (const [ip, ts] of lastSendByIp) {
+    if (ts < ipCutoff) lastSendByIp.delete(ip)
+  }
+  // 邮箱限流：小时窗口已过 + 60 秒间隔已过 → 条目可删（删掉等价于重置计数）
+  for (const [email, rec] of lastSendByEmail) {
+    if (now - rec.hourStart >= 60 * 60 * 1000 && now - rec.ts >= RATE_LIMIT_MS) {
+      lastSendByEmail.delete(email)
+    }
+  }
+  // 登录失败锁：锁定期已过 → 条目可删
+  for (const [email, rec] of loginFails) {
+    if (rec.lockedAt && now - rec.lockedAt >= LOGIN_LOCK_MS) loginFails.delete(email)
+  }
+}
+
 // ============== 核心业务函数 ==============
 async function verifyOtpAndConsume(email, code) {
   const sql = getSql()
@@ -127,15 +155,24 @@ async function verifyOtpAndConsume(email, code) {
        LIMIT 10
     `
     if (!rows.length) return { ok: false, status: 401, error: 'no_active_code' }
-    const row = rows[0]
-    if ((row.attempts || 0) >= 5) return { ok: false, status: 401, error: 'too_many_attempts' }
-    const codeHash = hashCode(code, row.salt)
-    if (codeHash !== row.code_hash) {
-      await sql`UPDATE email_otps SET attempts = attempts + 1 WHERE id = ${row.id}`
-      return { ok: false, status: 401, error: 'code_mismatch' }
+
+    // 还有剩余尝试次数的码
+    const usable = rows.filter((r) => (r.attempts || 0) < 5)
+    if (!usable.length) return { ok: false, status: 401, error: 'too_many_attempts' }
+
+    // ⚠️ 原来只比对最新一条（rows[0]）：用户拿到的是较早那封邮件的验证码
+    //    （未过期、未使用）时也会报"验证码错误" → 改成遍历所有仍有效的码逐个比对。
+    for (const row of usable) {
+      if (hashCode(code, row.salt) === row.code_hash) {
+        await sql`UPDATE email_otps SET consumed_at = now() WHERE id = ${row.id}`
+        return { ok: true }
+      }
     }
-    await sql`UPDATE email_otps SET consumed_at = now() WHERE id = ${row.id}`
-    return { ok: true }
+
+    // 全部不匹配 → 所有有效码的失败次数 +1（一条 UPDATE，避免逐条往返）
+    const ids = usable.map((r) => r.id)
+    await sql`UPDATE email_otps SET attempts = attempts + 1 WHERE id IN ${sql(ids)}`
+    return { ok: false, status: 401, error: 'code_mismatch' }
   } catch (e) {
     console.error('[otp] db error:', e)
     return { ok: false, status: 500, error: 'db_error', detail: e?.message || String(e) }
@@ -146,6 +183,7 @@ async function verifyOtpAndConsume(email, code) {
 async function handleSend(req, res, body) {
   const email = String(body.email || '').trim().toLowerCase()
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' })
+  sweepInMemoryMaps()
   const ip = String(req.headers['x-forwarded-for'] || req.headers['x-real-ip'] || '')
     .split(',')[0]
     .trim()
@@ -166,6 +204,24 @@ async function handleSend(req, res, body) {
   } catch (e) {
     console.error('[send] insert error:', e)
     return sendJson(res, 500, { error: 'db_error', detail: e?.message || String(e) })
+  }
+
+  // 清理过期/已消费的旧码：email_otps 表没有清理任务，不清会无限膨胀
+  // （单次最多删 500 行，避免大表全表扫描拖慢请求）
+  // ⚠️ 清理失败**不能**影响发码：码已经入库了，此时返回 500 会让用户收不到邮件，
+  //    且留下一条无人知晓的有效码（还能被 verify 用掉）。所以单独兜住，失败只记日志。
+  try {
+    const sql = getSql()
+    await sql`
+      DELETE FROM email_otps
+       WHERE id IN (
+         SELECT id FROM email_otps
+          WHERE expires_at < now() - interval '1 day'
+          LIMIT 500
+       )
+    `
+  } catch (e) {
+    console.warn('[send] cleanup old otps failed (ignored):', e?.message || String(e))
   }
 
   if (!resend) {
@@ -218,6 +274,7 @@ async function handleLogin(req, res, body) {
   const password = String(body.password || '')
   if (!isValidEmail(email)) return sendJson(res, 400, { error: 'invalid_email' })
   if (!password) return sendJson(res, 400, { error: 'invalid_password' })
+  sweepInMemoryMaps()
 
   const lock = loginFails.get(email)
   if (lock && Date.now() - lock.lockedAt < LOGIN_LOCK_MS) {
@@ -446,29 +503,6 @@ function handleHealth(req, res) {
   })
 }
 
-// TEMP diagnostic (remove after fix): inspect DATABASE_URL bytes + client construct
-async function handleDbDiag(req, res) {
-  const url = process.env.DATABASE_URL || ''
-  const cps = [...url].map((c) => c.codePointAt(0))
-  const bad = cps.filter((c) => [0, 9, 10, 13, 32, 34, 39, 65279].includes(c))
-  const probe = {
-    len: url.length,
-    head: url.slice(0, 14),
-    hostpart: url.slice(url.indexOf('@') + 1),
-    bad,
-    cps: cps.slice(0, 130).join(','),
-  }
-  let connect = null
-  try {
-    const sql = getSql()
-    await sql`select 1`
-    connect = 'ok'
-  } catch (e) {
-    connect = `${e?.code || ''} ${e?.message || String(e)}`.trim()
-  }
-  return sendJson(res, 200, { ok: true, probe, connect })
-}
-
 // ============== 入口 ==============
 export default async function handler(req, res) {
   if (req.method === 'OPTIONS') {
@@ -478,7 +512,6 @@ export default async function handler(req, res) {
   const action = String(req.query.action || '').toLowerCase()
   try {
     if (action === 'health' && req.method === 'GET') return handleHealth(req, res)
-    if (action === 'dbdiag' && req.method === 'GET') return await handleDbDiag(req, res)
 
     if (action === 'send' && req.method === 'POST') {
       const body = await readJsonBody(req)
